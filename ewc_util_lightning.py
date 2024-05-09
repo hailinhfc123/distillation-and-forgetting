@@ -14,69 +14,75 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, get_linear_schedu
 from datasets import load_dataset, Dataset
 import json, re
 import string
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger
+# import pytorch_lightning as pl
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch import Trainer, seed_everything
 import itertools
+from collections import defaultdict
+from typing import Optional
+import evaluate
+from datetime import datetime
 
-
+cache_dir = "/scratches/dialfs/alta/hln35/.cache"
+os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
 model_small = "google/flan-t5-small"
 tokenizer = AutoTokenizer.from_pretrained(model_small)
 
-class NewsSummaryDataset(Dataset):
-    def __init__(
-        self,
-        data: pd.DataFrame,
-        tokenizer: tokenizer,
-        text_max_token_len: int = 512,
-        summary_max_token_len: int = 128
-    ):
-        self.tokenizer = tokenizer
-        self.data = data
-        self.text_max_token_len = text_max_token_len
-        self.summary_max_token_len = summary_max_token_len
+# class NewsSummaryDataset(Dataset):
+#     def __init__(
+#         self,
+#         data: pd.DataFrame,
+#         tokenizer: tokenizer,
+#         text_max_token_len: int = 512,
+#         summary_max_token_len: int = 128
+#     ):
+#         self.tokenizer = tokenizer
+#         self.data = data
+#         self.text_max_token_len = text_max_token_len
+#         self.summary_max_token_len = summary_max_token_len
     
-    def __len__(self):
-        return len(self.data)
+#     def __len__(self):
+#         return len(self.data)
 
-    def __getitem__(self, index: int):
-        data_row = self.data.iloc[index]
+#     def __getitem__(self, index: int):
+#         data_row = self.data.iloc[index]
 
-        text = data_row['text']
+#         text = data_row['text']
 
-        text_encoding = tokenizer(
-            text,
-            max_length=self.text_max_token_len,
-            padding='max_length',
-            truncation=True,
-            return_attention_mask=True,
-            add_special_tokens=True,
-            return_tensors='pt'
-        )
+#         text_encoding = tokenizer(
+#             text,
+#             max_length=self.text_max_token_len,
+#             padding='max_length',
+#             truncation=True,
+#             return_attention_mask=True,
+#             add_special_tokens=True,
+#             return_tensors='pt'
+#         )
 
-        summary_encoding = tokenizer(
-            data_row['summary'],
-            max_length=self.summary_max_token_len,
-            padding='max_length',
-            truncation=True,
-            return_attention_mask=True,
-            add_special_tokens=True,
-            return_tensors='pt'
-        )
+#         summary_encoding = tokenizer(
+#             data_row['summary'],
+#             max_length=self.summary_max_token_len,
+#             padding='max_length',
+#             truncation=True,
+#             return_attention_mask=True,
+#             add_special_tokens=True,
+#             return_tensors='pt'
+#         )
 
-        labels = summary_encoding['input_ids']
-        labels[labels == 0] = -100 # to make sure we have correct labels for T5 text generation
+#         labels = summary_encoding['input_ids']
+#         labels[labels == 0] = -100 # to make sure we have correct labels for T5 text generation
 
-        return dict(
-            text=text,
-            summary=data_row['summary'],
-            text_input_ids=text_encoding['input_ids'].flatten(),
-            text_attention_mask=text_encoding['attention_mask'].flatten(),
-            labels=labels.flatten(),
-            labels_attention_mask=summary_encoding['attention_mask'].flatten()
-        )
+#         return dict(
+#             text=text,
+#             summary=data_row['summary'],
+#             text_input_ids=text_encoding['input_ids'].flatten(),
+#             text_attention_mask=text_encoding['attention_mask'].flatten(),
+#             labels=labels.flatten(),
+#             labels_attention_mask=summary_encoding['attention_mask'].flatten()
+#         )
     
-class GeneralDataModule(pl.LightningDataModule):
+class GeneralDataModule(L.LightningDataModule):
     task_prompt_map = {
         "xsum": ["summarise: "],
         "wmt14": ["translate English to French: "],
@@ -116,19 +122,6 @@ class GeneralDataModule(pl.LightningDataModule):
         "mnli": ["SetFit/mnli"],   
     }
 
-    # glue_task_num_labels = {
-    #     "cola": 2,
-    #     "sst2": 2,
-    #     "mrpc": 2,
-    #     "qqp": 2,
-    #     "stsb": 1,
-    #     "mnli": 3,
-    #     "qnli": 2,
-    #     "rte": 2,
-    #     "wnli": 2,
-    #     "ax": 3,
-    # }
-
     loader_columns = [
         "datasets_idx",
         "input_ids",
@@ -142,10 +135,10 @@ class GeneralDataModule(pl.LightningDataModule):
     def __init__(
         self,
         model_name_or_path: str,
-        task_name: str = "mrpc",
+        task_name: str = "xsum",
         input_max_seq_length: int = 512,
-        train_batch_size: int = 32,
-        eval_batch_size: int = 32,
+        train_batch_size: int = 8,
+        eval_batch_size: int = 8,
         output_max_seq_length: int = 128,
         **kwargs
     ):
@@ -165,61 +158,44 @@ class GeneralDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
 
-        self.dataset = datasets.load_dataset(self.dataset)
+        self.dataset = datasets.load_dataset(self.dataset, cache_dir=cache_dir)
 
         for split in self.dataset.keys():
             self.dataset[split] = self.dataset[split].map(
                 self.convert_to_features,
                 batched=True,
-                remove_columns=["label"],
             )
             self.columns = [c for c in self.dataset[split].column_names if c in self.loader_columns]
             self.dataset[split].set_format(type="torch", columns=self.columns)
 
-        self.eval_splits = [x for x in self.dataset.keys() if "validation" or "test" in x]
-        
-
-        self.train_dataset = NewsSummaryDataset(
-            self.train_df,
-            self.tokenizer,
-            self.text_max_token_len,
-            self.summary_max_token_len
-        )
-        self.test_dataset = NewsSummaryDataset(
-            self.test_df,
-            self.tokenizer,
-            self.text_max_token_len,
-            self.summary_max_token_len
-        )
+        self.eval_splits = [x for x in self.dataset.keys() if "validation" in x]
+        self.test_splits = [x for x in self.dataset.keys() if "test" in x]
 
     def prepare_data(self):
-        datasets.load_dataset(self.dataset)
+        datasets.load_dataset(self.dataset, cache_dir=cache_dir)
         AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
 
     def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=2
-        )
-
-    def test_dataloader(self):
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=2
-        )
+        return DataLoader(self.dataset["train"], batch_size=self.train_batch_size, shuffle=True)
 
     def val_dataloader(self):
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=2
-        )
-    
+        if len(self.eval_splits) == 1:
+            return DataLoader(self.dataset["validation"], batch_size=self.eval_batch_size)
+        elif len(self.eval_splits) > 1:
+            return [DataLoader(self.dataset[x], batch_size=self.eval_batch_size) for x in self.eval_splits]
+        else:
+            return DataLoader(self.dataset["test"], batch_size=self.eval_batch_size)
+
+
+    def test_dataloader(self):
+        if len(self.test_splits) == 1:
+            return DataLoader(self.dataset["test"], batch_size=self.eval_batch_size)
+        elif len(self.test_splits) > 1:
+            return [DataLoader(self.dataset[x], batch_size=self.eval_batch_size) for x in self.test_splits]
+        else:
+            return DataLoader(self.dataset["validation"], batch_size=self.eval_batch_size)
+
+
     def convert_to_features(self, example_batch, indices=None):
         # Either encode single sentence or sentence pairs
         for i in range(len(self.prompts)):
@@ -238,20 +214,54 @@ class GeneralDataModule(pl.LightningDataModule):
         features = self.tokenizer.batch_encode_plus(
             texts, max_length=self.input_max_seq_length, pad_to_max_length=True, truncation=True
         )
+        labels = self.tokenizer.batch_encode_plus(
+            example_batch[self.label_field], max_length=self.output_max_seq_length, pad_to_max_length=True, truncation=True)
 
         # Rename label to labels to make it easier to pass to model forward
-        features["labels"] = example_batch[self.label_field]
+        features["labels"] = labels["input_ids"]
+        features["labels_attention_mask"] = labels["attention_mask"]
+
 
         return features
+    
 N_EPOCHS = 3
 BATCH_SIZE = 8
 
-data_module = NewsSummaryDataModule(train_df, test_df, tokenizer)
+data_module_xsum = GeneralDataModule(model_small)
+data_module_anli = GeneralDataModule(model_small, task_name="anli")
 
-class NewsSummaryModel(pl.LightningModule):
-    def __init__(self):
+
+class NewModel(L.LightningModule):
+    task_evaluator_map = {
+        "xsum": "rouge",
+        "wmt14": "bleu",
+        # "race": ["answer this question by choosing the best choice either A, B, C, or D. Given the context is: ", ". Choices: "],
+        "boolq": "accuracy",
+        "anli": "accuracy",
+        "sst2": "accuracy",
+        "mnli": "accuracy",
+    }
+    def __init__(self,
+                model_name_or_path: str,
+                task_name: str,
+                learning_rate: float = 1e-4,
+                adam_epsilon: float = 1e-6,
+                warmup_steps: int = 0,
+                weight_decay: float = 0.0,
+                train_batch_size: int = 8,
+                eval_batch_size: int = 8,
+                eval_splits: Optional[list] = None,
+                **kwargs,):
         super().__init__()
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_small, return_dict=True)
+        self.save_hyperparameters()
+
+        self.metric = evaluate.load(
+            self.task_evaluator_map[self.hparams.task_name], experiment_id=datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+        )
+        self.outputs = defaultdict(list)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, return_dict=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
+
     
     def forward(self, input_ids, attention_mask, decoder_attention_mask, labels=None):
         output = self.model(
@@ -263,7 +273,7 @@ class NewsSummaryModel(pl.LightningModule):
 
         return output.loss, output.logits
 
-    def training_step(self, batch, batch_size):
+    def training_step(self, batch, batch_idx):
         input_ids = batch['text_input_ids']
         attention_mask = batch['text_attention_mask']
         labels = batch['labels']
@@ -279,11 +289,12 @@ class NewsSummaryModel(pl.LightningModule):
         self.log("train_loss", loss, prog_bar=True, logger=True)
         return loss
     
-    def validation_step(self, batch, batch_size):
+    def validation_step(self, batch, batch_idx, dataloader_idx):
         input_ids = batch['text_input_ids']
         attention_mask = batch['text_attention_mask']
         labels = batch['labels']
         labels_attention_mask = batch['labels_attention_mask']
+        sources = batch['']
 
         loss, outputs = self(
             input_ids=input_ids,
@@ -291,11 +302,16 @@ class NewsSummaryModel(pl.LightningModule):
             decoder_attention_mask=labels_attention_mask,
             labels=labels
         )
+        if self.task_evaluator_map[self.hparams.task_name] == "accuracy":
+            preds = outputs[:, 1]
+        else:
+            preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         self.log("val_loss", loss, prog_bar=True, logger=True)
+        self.outputs[dataloader_idx].append({"loss": loss, "preds": preds, "labels": labels})
         return loss
 
-    def test_step(self, batch, batch_size):
+    def test_step(self, batch, batch_idx):
         input_ids = batch['text_input_ids']
         attention_mask = batch['text_attention_mask']
         labels = batch['labels']
@@ -312,28 +328,78 @@ class NewsSummaryModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return AdamW(self.parameters(), lr=0.0001)
+        return AdamW(self.parameters(), lr=self.hparams.learning_rate)
+    
+    def on_validation_epoch_end(self):
+        # if self.hparams.task_name == "mnli":
+        #     for i, outputs in self.outputs.items():
+        #         # matched or mismatched
+        #         split = self.hparams.eval_splits[i].split("_")[-1]
+        #         preds = torch.cat([x["preds"] for x in outputs]).detach().cpu().numpy()
+        #         labels = torch.cat([x["labels"] for x in outputs]).detach().cpu().numpy()
+        #         loss = torch.stack([x["loss"] for x in outputs]).mean()
+        #         self.log(f"val_loss_{split}", loss, prog_bar=True)
+        #         split_metrics = {
+        #             f"{k}_{split}": v for k, v in self.metric.compute(predictions=preds, references=labels).items()
+        #         }
+        #         self.log_dict(split_metrics, prog_bar=True)
+        #     return loss
+
+        flat_outputs = []
+        for lst in self.outputs.values():
+            flat_outputs.extend(lst)
+        if self.task_evaluator_map[self.hparams.task_name] == "accuracy":
+            preds = torch.cat([x["preds"] for x in flat_outputs]).detach().cpu().numpy()
+            labels = torch.cat([x["labels"] for x in flat_outputs]).detach().cpu().numpy()
+            loss = torch.stack([x["loss"] for x in flat_outputs]).mean()
+            self.log("val_loss", loss, prog_bar=True)
+            self.log_dict(self.metric.compute(predictions=preds, references=labels), prog_bar=True)
+        else:
+            preds = torch.cat([x["preds"] for x in flat_outputs])
+            labels = torch.cat([x["labels"] for x in flat_outputs])
+            loss = torch.stack([x["loss"] for x in flat_outputs]).mean()
+            self.log("val_loss", loss, prog_bar=True)
+            # if self.task_evaluator_map[self.hparams.task_name] == "comet":
+            #     self.log_dict(self.metric.compute(predictions=preds, references=labels, sources=), prog_bar=True)
+            self.log_dict(self.metric.compute(predictions=preds, references=labels), prog_bar=True)
+        self.outputs.clear()
     
 
-model = NewsSummaryModel()
-     
 checkpoint_callback = ModelCheckpoint(
-    dirpath='checkpoints',
-    filename='best-checkpoint',
+    dirpath='/scratches/dialfs/alta/hln35/distillation/new_model_checkpoints',
+    filename='best-checkpoint-{epoch}-{val_loss:.2f}',
     save_top_k=1,
     verbose=True,
     monitor='val_loss',
-    mode='min'
+    mode='min',
+    auto_insert_metric_name=True
 )
 
-logger = TensorBoardLogger("lightning_logs", name='news-summary')
+logger = TensorBoardLogger(save_dir=os.getcwd(), version=datetime.now().strftime("%d-%m-%Y_%H-%M-%S"), name="lightning_logs")
 
-trainer = pl.Trainer(
+seed_everything(42, workers=True)
+
+trainer = L.Trainer(
+    accelerator="gpu",
+    devices=1,
     logger=logger,
-    checkpoint_callback=checkpoint_callback,
+    callback=[checkpoint_callback],
     max_epochs=N_EPOCHS,
-    gpus=1,
-    progress_bar_refresh_rate=30
+    deterministic=True,
 )
 
-trainer.fit(model, data_module)
+dm_mnli = GeneralDataModule(
+    model_name_or_path=model_small,
+    task_name="mnli",
+)
+dm_mnli.setup("fit")
+
+model = NewModel(
+    model_name_or_path=model_small,
+    eval_splits=dm_mnli.eval_splits,
+    task_name=dm_mnli.task_name,
+)
+
+trainer.validate(model, dm_mnli)
+
+trainer.fit(model, dm_mnli)

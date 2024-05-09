@@ -130,6 +130,8 @@ class GeneralDataModule(L.LightningDataModule):
         "start_positions",
         "end_positions",
         "labels",
+        "labels_attention_mask",
+        "sources",
     ]
     
     def __init__(
@@ -150,7 +152,7 @@ class GeneralDataModule(L.LightningDataModule):
         self.train_batch_size = train_batch_size
         self.eval_batch_size = eval_batch_size
         self.output_max_seq_length = output_max_seq_length
-        self.dataset = self.task_dataset_split_map[task_name]
+        self.dataset = self.task_dataset_split_map[task_name][0]
         self.text_fields = self.task_text_field_map[task_name]
         self.prompts = self.task_prompt_map[task_name]
         self.label_field = self.task_label_field[task_name][0]
@@ -220,7 +222,7 @@ class GeneralDataModule(L.LightningDataModule):
         # Rename label to labels to make it easier to pass to model forward
         features["labels"] = labels["input_ids"]
         features["labels_attention_mask"] = labels["attention_mask"]
-
+        features["sources"] = example_batch[self.text_fields[0]]
 
         return features
     
@@ -383,7 +385,7 @@ trainer = L.Trainer(
     accelerator="gpu",
     devices=1,
     logger=logger,
-    callback=[checkpoint_callback],
+    callbacks=[checkpoint_callback],
     max_epochs=N_EPOCHS,
     deterministic=True,
 )

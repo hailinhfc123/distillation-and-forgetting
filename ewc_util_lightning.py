@@ -24,8 +24,10 @@ from typing import Optional
 import evaluate
 from datetime import datetime
 
-cache_dir = "/scratches/dialfs/alta/hln35/.cache"
-os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
+# cache_dir = "/scratches/dialfs/alta/hln35/.cache"
+# os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
+cache_dir = "~/.cache"
+os.environ['TRANSFORMERS_CACHE'] = '~/.cache'
 model_small = "google/flan-t5-small"
 tokenizer = AutoTokenizer.from_pretrained(model_small)
 
@@ -368,7 +370,7 @@ class NewModel(L.LightningModule):
     
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath='/scratches/dialfs/alta/hln35/distillation/new_model_checkpoints',
+    dirpath = cache_dir + '/new_model_checkpoints',
     filename='best-checkpoint-{epoch}-{val_loss:.2f}',
     save_top_k=1,
     verbose=True,
@@ -377,7 +379,7 @@ checkpoint_callback = ModelCheckpoint(
     auto_insert_metric_name=True
 )
 
-logger = TensorBoardLogger(save_dir=os.getcwd(), version=datetime.now().strftime("%d-%m-%Y_%H-%M-%S"), name="lightning_logs")
+logger = TensorBoardLogger(save_dir=cache_dir + '/log', version=datetime.now().strftime("%d-%m-%Y_%H-%M-%S"), name="lightning_logs")
 
 seed_everything(42, workers=True)
 

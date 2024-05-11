@@ -202,15 +202,20 @@ class GeneralDataModule(L.LightningDataModule):
 
     def text_and_prompt_generator(self, zipped_text_and_promt):
         for t in zipped_text_and_promt:
-            yield {"complete_text" : t}
+            yield {"complete_text" : "".join(t)}
 
     def convert_to_features(self, example_batch, indices=None):
         # Either encode single sentence or sentence pairs
+        len_dataset = len(example_batch[self.text_fields[0]])
+        iterator_list = []
         texts = None
         for i in range(len(self.prompts)):
-            texts = zip(itertools.repeat(self.prompts[i]))
+            iterator_list.append(itertools.repeat(self.prompts[i], len_dataset))
+            # texts = itertools.repeat(self.prompts[i], len_dataset) if texts == None else zip(texts, itertools.repeat(self.prompts[i], len_dataset))
             if i < len(self.text_fields) - 1:
-                texts = zip(texts, example_batch[self.text_fields[i]])
+                iterator_list.append(example_batch[self.text_fields[i]])
+                # texts = zip(texts, example_batch[self.text_fields[i]])
+        texts = zip(*iterator_list)
 
         dataset = Dataset.from_generator(lambda : self.text_and_prompt_generator(texts))
         # texts = list(texts)
@@ -219,7 +224,7 @@ class GeneralDataModule(L.LightningDataModule):
         #     texts_or_text_pairs = list(zip(example_batch[self.text_fields[0]], example_batch[self.text_fields[1]]))
         # else:
         #     texts_or_text_pairs = example_batch[self.text_fields[0]]
-
+        complete_texts = dataset["complete_text"]
         # Tokenize the text/text pairs
         features = self.tokenizer.batch_encode_plus(
             dataset["complete_text"], max_length=self.input_max_seq_length, pad_to_max_length=True, truncation=True
@@ -401,7 +406,7 @@ trainer = L.Trainer(
 
 dm_mnli = GeneralDataModule(
     model_name_or_path=model_small,
-    task_name="anli",
+    task_name="xsum",
     eval_batch_size=BATCH_SIZE,
     train_batch_size=BATCH_SIZE,
 )

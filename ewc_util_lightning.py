@@ -24,10 +24,10 @@ from typing import Optional
 import evaluate
 from datetime import datetime
 
-# cache_dir = "/scratches/dialfs/alta/hln35/.cache"
-# os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
-cache_dir = "~/.cache"
-os.environ['TRANSFORMERS_CACHE'] = '~/.cache'
+cache_dir = "/scratches/dialfs/alta/hln35/.cache"
+os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
+# cache_dir = "./.cache"
+# os.environ['TRANSFORMERS_CACHE'] = './.cache'
 model_small = "google/flan-t5-small"
 tokenizer = AutoTokenizer.from_pretrained(model_small)
 
@@ -200,14 +200,20 @@ class GeneralDataModule(L.LightningDataModule):
             return DataLoader(self.dataset["validation"], batch_size=self.eval_batch_size)
 
 
+    def text_and_prompt_generator(self, zipped_text_and_promt):
+        for t in zipped_text_and_promt:
+            yield {"complete_text" : t}
+
     def convert_to_features(self, example_batch, indices=None):
         # Either encode single sentence or sentence pairs
+        texts = None
         for i in range(len(self.prompts)):
             texts = zip(itertools.repeat(self.prompts[i]))
             if i < len(self.text_fields) - 1:
                 texts = zip(texts, example_batch[self.text_fields[i]])
-        
-        texts = list(texts)
+
+        dataset = Dataset.from_generator(lambda : self.text_and_prompt_generator(texts))
+        # texts = list(texts)
 
         # if len(self.text_fields) > 1:
         #     texts_or_text_pairs = list(zip(example_batch[self.text_fields[0]], example_batch[self.text_fields[1]]))
@@ -216,11 +222,11 @@ class GeneralDataModule(L.LightningDataModule):
 
         # Tokenize the text/text pairs
         features = self.tokenizer.batch_encode_plus(
-            texts, max_length=self.input_max_seq_length, pad_to_max_length=True, truncation=True
+            dataset["complete_text"], max_length=self.input_max_seq_length, pad_to_max_length=True, truncation=True
         )
         labels = self.tokenizer.batch_encode_plus(
             example_batch[self.label_field], max_length=self.output_max_seq_length, pad_to_max_length=True, truncation=True)
-
+        print(features)
         # Rename label to labels to make it easier to pass to model forward
         features["labels"] = labels["input_ids"]
         features["labels_attention_mask"] = labels["attention_mask"]
@@ -228,11 +234,10 @@ class GeneralDataModule(L.LightningDataModule):
 
         return features
     
-N_EPOCHS = 3
-BATCH_SIZE = 8
 
-data_module_xsum = GeneralDataModule(model_small)
-data_module_anli = GeneralDataModule(model_small, task_name="anli")
+
+# data_module_xsum = GeneralDataModule(model_small)
+# data_module_anli = GeneralDataModule(model_small, task_name="anli")
 
 
 class NewModel(L.LightningModule):
@@ -368,6 +373,8 @@ class NewModel(L.LightningModule):
             self.log_dict(self.metric.compute(predictions=preds, references=labels), prog_bar=True)
         self.outputs.clear()
     
+N_EPOCHS = 3
+BATCH_SIZE = 1
 
 checkpoint_callback = ModelCheckpoint(
     dirpath = cache_dir + '/new_model_checkpoints',
@@ -384,7 +391,7 @@ logger = TensorBoardLogger(save_dir=cache_dir + '/log', version=datetime.now().s
 seed_everything(42, workers=True)
 
 trainer = L.Trainer(
-    accelerator="gpu",
+    accelerator="cpu",
     devices=1,
     logger=logger,
     callbacks=[checkpoint_callback],
@@ -394,7 +401,9 @@ trainer = L.Trainer(
 
 dm_mnli = GeneralDataModule(
     model_name_or_path=model_small,
-    task_name="mnli",
+    task_name="anli",
+    eval_batch_size=BATCH_SIZE,
+    train_batch_size=BATCH_SIZE,
 )
 dm_mnli.setup("fit")
 
@@ -402,6 +411,8 @@ model = NewModel(
     model_name_or_path=model_small,
     eval_splits=dm_mnli.eval_splits,
     task_name=dm_mnli.task_name,
+    eval_batch_size=BATCH_SIZE,
+    train_batch_size=BATCH_SIZE,
 )
 
 trainer.validate(model, dm_mnli)

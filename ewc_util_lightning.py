@@ -176,7 +176,7 @@ class GeneralDataModule(L.LightningDataModule):
         self.test_splits = [x for x in self.dataset.keys() if "test" in x]
 
     def prepare_data(self):
-        datasets.load_dataset(self.dataset, cache_dir=cache_dir)
+        #datasets.load_dataset(self.dataset, cache_dir=cache_dir)
         AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
 
     def train_dataloader(self):
@@ -231,7 +231,7 @@ class GeneralDataModule(L.LightningDataModule):
         )
         labels = self.tokenizer.batch_encode_plus(
             example_batch[self.label_field], max_length=self.output_max_seq_length, pad_to_max_length=True, truncation=True)
-        print(features)
+        # print(features)
         # Rename label to labels to make it easier to pass to model forward
         features["labels"] = labels["input_ids"]
         features["labels_attention_mask"] = labels["attention_mask"]
@@ -274,7 +274,7 @@ class NewModel(L.LightningModule):
         )
         self.outputs = defaultdict(list)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, return_dict=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, use_fast=True)
 
     
     def forward(self, input_ids, attention_mask, decoder_attention_mask, labels=None):
@@ -396,7 +396,7 @@ logger = TensorBoardLogger(save_dir=cache_dir + '/log', version=datetime.now().s
 seed_everything(42, workers=True)
 
 trainer = L.Trainer(
-    accelerator="cpu",
+    accelerator="gpu",
     devices=1,
     logger=logger,
     callbacks=[checkpoint_callback],

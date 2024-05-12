@@ -154,16 +154,14 @@ class GeneralDataModule(L.LightningDataModule):
         self.train_batch_size = train_batch_size
         self.eval_batch_size = eval_batch_size
         self.output_max_seq_length = output_max_seq_length
-        self.dataset = self.task_dataset_split_map[task_name][0]
+        self.dataset_name = self.task_dataset_split_map[task_name][0]
         self.text_fields = self.task_text_field_map[task_name]
         self.prompts = self.task_prompt_map[task_name]
         self.label_field = self.task_label_field[task_name][0]
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
 
     def setup(self, stage=None):
-
-        self.dataset = datasets.load_dataset(self.dataset, cache_dir=cache_dir)
-
+        self.dataset = datasets.load_dataset(self.dataset_name, cache_dir=cache_dir)
         for split in self.dataset.keys():
             self.dataset[split] = self.dataset[split].map(
                 self.convert_to_features,
@@ -176,8 +174,7 @@ class GeneralDataModule(L.LightningDataModule):
         self.test_splits = [x for x in self.dataset.keys() if "test" in x]
 
     def prepare_data(self):
-        #datasets.load_dataset(self.dataset, cache_dir=cache_dir)
-        AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
+        datasets.load_dataset(self.dataset_name, cache_dir=cache_dir)
 
     def train_dataloader(self):
         return DataLoader(self.dataset["train"], batch_size=self.train_batch_size, shuffle=True)
@@ -227,10 +224,10 @@ class GeneralDataModule(L.LightningDataModule):
         complete_texts = dataset["complete_text"]
         # Tokenize the text/text pairs
         features = self.tokenizer.batch_encode_plus(
-            dataset["complete_text"], max_length=self.input_max_seq_length, pad_to_max_length=True, truncation=True
+            dataset["complete_text"], max_length=self.input_max_seq_length, padding='max_length', truncation=True
         )
         labels = self.tokenizer.batch_encode_plus(
-            example_batch[self.label_field], max_length=self.output_max_seq_length, pad_to_max_length=True, truncation=True)
+            example_batch[self.label_field], max_length=self.output_max_seq_length, padding='max_length', truncation=True)
         # print(features)
         # Rename label to labels to make it easier to pass to model forward
         features["labels"] = labels["input_ids"]

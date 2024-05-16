@@ -23,6 +23,7 @@ model_large = "google/flan-t5-large"
 if torch.cuda.is_available() == False:
     raise Exception("Cuda is not available, please enable cuda")
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+print(device)
 max_input_length = 1024
 max_target_length = 128
 tokenizer = AutoTokenizer.from_pretrained(model_large, cache_dir=cache_dir)
@@ -40,8 +41,9 @@ def output_generator(model, train_summary_set):
     progress_bar = tqdm(range(len(train_summary_set["input_ids"])))
     for i in range(len(train_summary_set["input_ids"])):
             test_tensor = torch.unsqueeze(train_summary_set["input_ids"][i],0).to(device)
-            preds = model.generate(test_tensor, max_new_tokens=max_target_length, do_sample=False)                                   
-            preds_text = tokenizer.batch_decode(preds, skip_special_tokens=True)
+            preds = model.generate(test_tensor, max_new_tokens=max_target_length, do_sample=False)[0]    
+            #preds_text = tokenizer.batch_decode(preds, skip_special_tokens=True)
+            #print(preds_text)
             progress_bar.update(1)
             yield {"label_ids":preds}
 
@@ -51,12 +53,18 @@ def generate_summary_outputs(model_name, dataset, path, num_rows=1000):
     summary_datapoints = load_dataset(dataset, cache_dir=cache_dir)
     tokenized_summary = summary_datapoints.map(preprocess_function_summary, batched=True)
     tokenized_summary["train"].set_format("torch")
-    train_summary_set = tokenized_summary["train"].select(range(num_rows))
+    if num_rows == "full":
+        train_summary_set = tokenized_summary["train"]
+    else:
+        train_summary_set = tokenized_summary["train"].select(range(num_rows))
+        
     dataset = Dataset.from_generator(lambda : output_generator(model, train_summary_set))
+    # max_tokens_output_len = max(dataset["label_ids"], key=len)
+    # dataset = dataset.map()
     torch.save(dataset, path)
     return dataset
 
-dataset = generate_summary_outputs(model_large, "xsum", "./output_xsum_from_t5_large.pt", num_rows=10000)
+dataset = generate_summary_outputs(model_large, "EdinburghNLP/xsum", "./output_xsum_from_t5_large_full.pt", num_rows="full")
 
             
         

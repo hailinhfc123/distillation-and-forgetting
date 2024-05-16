@@ -126,9 +126,9 @@ class GeneralDataModule(L.LightningDataModule):
 
     loader_columns = [
         "datasets_idx",
-        "input_ids",
+        "text_input_ids",
         "token_type_ids",
-        "attention_mask",
+        "text_attention_mask",
         "start_positions",
         "end_positions",
         "labels",
@@ -230,6 +230,8 @@ class GeneralDataModule(L.LightningDataModule):
             example_batch[self.label_field], max_length=self.output_max_seq_length, padding='max_length', truncation=True)
         # print(features)
         # Rename label to labels to make it easier to pass to model forward
+        features["text_input_ids"] = features["input_ids"]
+        features["text_attention_mask"] = features["attention_mask"] 
         features["labels"] = labels["input_ids"]
         features["labels_attention_mask"] = labels["attention_mask"]
         features["sources"] = example_batch[self.text_fields[0]]
@@ -281,10 +283,10 @@ class NewModel(L.LightningModule):
             labels=labels,
             decoder_attention_mask=decoder_attention_mask
         )
-
+        print("Forward output", output.logits)
         return output.loss, output.logits
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx=0):
         input_ids = batch['text_input_ids']
         attention_mask = batch['text_attention_mask']
         labels = batch['labels']
@@ -300,12 +302,13 @@ class NewModel(L.LightningModule):
         self.log("train_loss", loss, prog_bar=True, logger=True)
         return loss
     
-    def validation_step(self, batch, batch_idx, dataloader_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        print("batch: ", batch)
         input_ids = batch['text_input_ids']
         attention_mask = batch['text_attention_mask']
         labels = batch['labels']
         labels_attention_mask = batch['labels_attention_mask']
-        sources = batch['']
+        sources = batch['sources']
 
         loss, outputs = self(
             input_ids=input_ids,
@@ -313,6 +316,8 @@ class NewModel(L.LightningModule):
             decoder_attention_mask=labels_attention_mask,
             labels=labels
         )
+        print("loss: ", loss)
+        print("output: ",outputs)
         if self.task_evaluator_map[self.hparams.task_name] == "accuracy":
             preds = outputs[:, 1]
         else:
@@ -322,7 +327,7 @@ class NewModel(L.LightningModule):
         self.outputs[dataloader_idx].append({"loss": loss, "preds": preds, "labels": labels})
         return loss
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx=0):
         input_ids = batch['text_input_ids']
         attention_mask = batch['text_attention_mask']
         labels = batch['labels']

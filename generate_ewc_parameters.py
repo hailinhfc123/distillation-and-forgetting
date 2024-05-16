@@ -116,15 +116,15 @@ def preprocess_mnli(data_points):
 
 
 def preprocess_function_translate(examples):
-    inputs = [prefix_translate + example[source_lang] for example in examples["translation"]]
-    targets = [example[target_lang] for example in examples["translation"]]
-    model_inputs = tokenizer(inputs, max_length=128, truncation=True)
+    prefix_translate = "translate English to French: "
+    inputs = [prefix_translate + example[source_lang] for example in examples]
+    targets = [example[target_lang] for example in examples]
+    model_inputs = tokenizer(inputs, max_length=max_input_length, padding="max_length", truncation=True)
     # model_inputs = tokenizer(inputs, text_target=targets, max_length=128, truncation=True)
-    labels = tokenizer(text_target=targets, max_length=max_target_length, truncation=True)
+    labels = tokenizer(targets, max_length=max_target_length, padding="max_length", truncation=True)
 
     model_inputs["labels"] = labels["input_ids"]
     return model_inputs
-
 
 def preprocess_function_summary(examples):
     prefix = "summarize: "

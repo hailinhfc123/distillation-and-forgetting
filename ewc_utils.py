@@ -13,6 +13,9 @@ from transformers import AutoModelForQuestionAnswering, AutoModel, AutoModelForS
 from datasets import load_dataset, Dataset
 import json, re
 import string
+from torch.utils.tensorboard import SummaryWriter
+from rouge import Rouge
+import datetime
 
 
 def variable(t: torch.Tensor, use_cuda=True, **kwargs):
@@ -105,74 +108,128 @@ class EWC(object):
     def penalty(self, model: nn.Module):
         loss = 0
         for n, p in model.named_parameters():
+            
             _loss = self._precision_matrices[n] * (p - self._means[n]) ** 2
             loss += _loss.sum()
         return loss
 
 
-def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader):
+def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader, epochs:int, comment_to_file_name: str, batch_size, evaluator):
     model.train()
+    writer = SummaryWriter(comment=comment_to_file_name)
     epoch_loss = 0
-    for input, target in data_loader:
-        input = input["input_ids"].to(device)
-        optimizer.zero_grad()
-        output = model(input)
-        loss = F.cross_entropy(output, target)
-        epoch_loss += loss.data[0]
-        loss.backward()
-        optimizer.step()
-    return epoch_loss / len(data_loader)
-    
-def ewc_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader,
-              ewc: EWC, importance: float, epochs:int, validation_input_ids, validation_labels, model_name):
-    model.train()
-    loss_per_100 = 0
-    acc_per_100 = 0
-    loss_array = []
-    acc_array = []	
-    eval_results = []
-    c = 0
-    num_training_steps = epochs * len(data_loader)
-    
+    num_training_steps = len(data_loader) * epochs * batch_size
+    len_dataloader = len(data_loader)
     progress_bar = tqdm(range(num_training_steps))
     for epoch in range(epochs):
-        for batch in data_loader:
-             labels = batch["labels"].clone().detach().requires_grad_(True).to(device)
-             labels = labels.squeeze()
-             labels = torch.nn.functional.softmax(labels, dim=-1)
-             input = batch["input_ids"].to(device)
-             optimizer.zero_grad()
-             outputs = model(input, decoder_input_ids=torch.tensor([[model.config.decoder_start_token_id]]).to(device))
-             loss_fct = torch.nn.CrossEntropyLoss()
-             logits = outputs.get("logits")
-             preds = logits[0, 0, tuple(list(ans_id_dict.keys()))]
+        for step, batch in enumerate(data_loader):
+            input = batch["input_ids"].to(device)
+            labels = batch["labels"].to(device)
+            # print(labels)
+            # labels = torch.squeeze(labels, dim=0)
+            optimizer.zero_grad()
+            output = model(input_ids=input, labels=labels)
+            loss = output.loss
+            # loss = F.cross_entropy(output, target)
+            # epoch_loss += loss.data[0]
+            loss.backward()
+            # print(loss)
+            # batch_size = len(loss)
+            # for i, l in enumerate(loss):
+            writer.add_scalar("Loss/train", loss.data, (step + epoch * len_dataloader) * batch_size)
+            optimizer.step()
+            progress_bar.update(batch_size)
+        model_name = "/scratches/dialfs/alta/hln35/model/" + comment_to_file_name
+        model.save_pretrained(f"{model_name}_epoch{epoch}")
+    writer.flush()
+    return model
+
+
+def ewc_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader,
+              ewc: EWC, importance: float, epochs:int, batch_size, validation_input_ids, validation_labels, comment_to_file_name: str):
+    writer = SummaryWriter(comment=comment_to_file_name)
+    model.train()
+    epoch_loss = 0
+    num_training_steps = len(data_loader) * epochs * batch_size
+    len_dataloader = len(data_loader)
+    progress_bar = tqdm(range(num_training_steps))
+    for epoch in range(epochs):
+        for step, batch in enumerate(data_loader):
+            current_step = (step + epoch * len_dataloader) * batch_size
+            input = batch["input_ids"].to(device)
+            labels = batch["labels"].to(device)
+            optimizer.zero_grad()
+            output = model(input_ids=input, labels=labels)
+            #print(output.loss)
+           
             
-             if torch.argmax(labels) == torch.argmax(preds):
-                 acc_per_100 += 1
+            loss = output.loss + importance * ewc.penalty(model)
+            writer.add_scalar("Loss/train", loss.data, current_step)
             
-             loss = loss_fct(preds, labels) + importance * ewc.penalty(model)
-             loss_per_100 += loss.item()
-             if c%100==99:
-                 print(loss_per_100)
-                 loss_array.append(loss_per_100)
-                 acc_array.append(acc_per_100)
-               
-                 loss_per_100 = 0
-                 acc_per_100 = 0
-               
-             loss.backward()
-             optimizer.step()
-             progress_bar.update(1)
-             c += 1
-             if c%10000==9999:
-                 eval_result = evaluate(model, validation_input_ids, validation_labels)
-                 eval_results.append(eval_result)
-                 print(f"Performance on validation set is {eval_result}")
-        
-        model.save_pretrained(f"{model_name}_{'{:.0e}'.format(importance)}_epoch{epoch}")
-        
+            #print(loss)
+            epoch_loss += loss.data
+            loss.backward()
+            optimizer.step()
+            progress_bar.update(batch_size)
+            if current_step%50000==0:
+                eval_result = evaluate(model, validation_input_ids, validation_labels)
+                writer.add_scalar("Validation accuracy", eval_result, current_step)
+                print(f"Performance on validation set is {eval_result}")
+            
+        model_name = "/scratches/dialfs/alta/hln35/model/" + comment_to_file_name
+        model.save_pretrained(f"{model_name}_epoch{epoch}")
+
+    writer.flush()
+    return model
     
-    return model, loss_array, acc_array, eval_results
+# def ewc_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader,
+#               ewc: EWC, importance: float, epochs:int, validation_input_ids, validation_labels, model_name):
+#     model.train()
+#     loss_per_100 = 0
+#     acc_per_100 = 0
+#     loss_array = []
+#     acc_array = []	
+#     eval_results = []
+#     c = 0
+#     num_training_steps = epochs * len(data_loader)
+    
+#     progress_bar = tqdm(range(num_training_steps))
+#     for epoch in range(epochs):
+#         for batch in data_loader:
+#              labels = batch["labels"].clone().detach().requires_grad_(True).to(device)
+#              labels = labels.squeeze()
+#              labels = torch.nn.functional.softmax(labels, dim=-1)
+#              input = batch["input_ids"].to(device)
+#              optimizer.zero_grad()
+#              outputs = model(input, decoder_input_ids=torch.tensor([[model.config.decoder_start_token_id]]).to(device))
+#              loss_fct = torch.nn.CrossEntropyLoss()
+#              logits = outputs.get("logits")
+#              preds = logits[0, 0, tuple(list(ans_id_dict.keys()))]
+            
+#              if torch.argmax(labels) == torch.argmax(preds):
+#                  acc_per_100 += 1
+            
+#              loss = loss_fct(preds, labels) + importance * ewc.penalty(model)
+#              loss_per_100 += loss.item()
+#              if c%100==99:
+#                  print(loss_per_100)
+#                  loss_array.append(loss_per_100)
+#                  acc_array.append(acc_per_100)
+               
+#                  loss_per_100 = 0
+#                  acc_per_100 = 0
+               
+#              loss.backward()
+#              optimizer.step()
+#              progress_bar.update(1)
+#              c += 1
+#              if c%10000==9999:
+#                  eval_result = evaluate(model, validation_input_ids, validation_labels)
+#                  eval_results.append(eval_result)
+#                  print(f"Performance on validation set is {eval_result}")
+        
+#         model.save_pretrained(f"{model_name}_{'{:.0e}'.format(importance)}_epoch{epoch}")
+#    return model, loss_array, acc_array, eval_results
 
 def evaluate(model, input_ids, labels, ans_id_dict=ans_id_dict):
     model.eval()
@@ -198,6 +255,101 @@ def evaluate(model, input_ids, labels, ans_id_dict=ans_id_dict):
         if model_outputs[i] == labels[i] or ans_to_index[model_outputs[i]] == labels[i]:
             result += 1
     return result
+
+def evaluate_summary(model, tokenizer, data_loader, batch_size, src_field, ref_field, evaluator):
+    max_target_length = 128
+    if evaluator.name == "rouge":
+        print("Using Rouge")
+    else:
+        print("Not using Rouge")
+    model_name = model.config.name_or_path
+    random_sentence = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. In fermentum posuere urna nec tincidunt praesent. Arcu risus quis varius quam quisque."
+    print(model_name)
+    model_small = model
+    src_list = []
+    ref_list = []
+    output_list = []
+    progress_bar = tqdm(range(len(data_loader)))
+    for data in data_loader:
+        # print(data)
+        ref_list += data[ref_field]
+        src_list += data[src_field]
+        input_ids = data["input_ids"].to(device)
+        
+        preds_tokenized = model_small.generate(input_ids, max_new_tokens=max_target_length, do_sample=False) 
+        # cprint(f'model: {model_name},time: {datetime.datetime.now()}', color='green')
+        input_text = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
+        #print(input_text)
+        preds = tokenizer.batch_decode(preds_tokenized, skip_special_tokens=True)
+        preds = [pred if pred != "" else random_sentence  for pred in preds]
+        #print(preds)
+        output_list += preds
+        progress_bar.update(1)
+
+    #src_list = data_loader[src_field]
+    #ref_list = data_loader[ref_field]
+    if evaluator.name == "rouge":
+        eval_scores = evaluator.compute(predictions=output_list, references=ref_list)
+    else:
+        num_ans = len(output_list)
+        results_small_dict = {}
+        all_data = convert_to_json(output_list=output_list, 
+                                   src_list=src_list, ref_list=ref_list)
+        eval_scores = evaluator.evaluate(all_data)
+        for eval_score in eval_scores:
+            for key, value in eval_score.items():
+                if key not in results_small_dict:
+                    results_small_dict[key] = value
+                else:
+                    results_small_dict[key] += value
+        for k, v in results_small_dict.items():
+            results_small_dict[k] = v/num_ans
+        eval_scores = results_small_dict
+    
+    # model_output = model_evaluator.predict(text_list, batch_size=batch_size)
+    print(f"For model {model_name} the average score on the test set is ")
+    # print(len(model_output["system_score"]))
+    print(eval_scores)
+    model_name = model_name.split("/")[-1]
+    with open(f"log_eval/log_evaluation_{model_name}.json", "a") as outfile: 
+        json.dump(eval_scores, outfile)
+    return eval_scores
+
+def evaluate_mt(model, tokenizer, data_loader, batch_size, source_lang, target_lang, model_evaluator):
+    model_name = model.config.name_or_path
+    max_target_length = 128
+    print(model_name)
+    model_small = model
+
+    scores_ewc = []
+    text_list = []
+    progress_bar = tqdm(range(len(data_loader)))
+    for data in data_loader:
+        ref = data[target_lang]
+        src = data[source_lang]
+        input_ids = data["input_ids"].to(device)
+        
+        preds_tokenized = model_small.generate(input_ids, max_new_tokens=max_target_length, do_sample=False) 
+        preds = tokenizer.batch_decode(preds_tokenized, skip_special_tokens=True)
+#        print(preds)
+        for i in range(len(ref)):
+           text_list += [{
+                "src": src[i],
+                "mt": preds[i],
+                "ref": ref[i]
+            }]
+        progress_bar.update(1)
+        
+    model_output = model_evaluator.predict(text_list, batch_size=batch_size)
+    print(f"For model {model_name} the average score on the test set is ")
+    # print(len(model_output["system_score"]))
+    print(model_output["system_score"])
+    eval_scores = {"system_score" : model_output["system_score"]}
+    model_name = model_name.split("/")[-1]
+    with open(f"log_eval/log_evaluation_{model_name}.json", "a") as outfile: 
+        json.dump(eval_scores, outfile)
+        
+    return model_output
 
 def compute_loss_generate(input_ids, max_new_tokens, model, tokenizer, device, labels=None):
     # test_tensor = torch.tensor([tokenized_summary["train"][0]["input_ids"]]).to(device)
@@ -323,6 +475,13 @@ def em_evaluator(predictions, ground_truths, xlingual=False):
             res += 1
     return res
 
+def pad_dataset(data_points, tokenizer, max_tokens_output_len):
+    pad_input_ids = tokenizer("<pad>", add_special_tokens=False).input_ids[0]
+    
+    if len(data_points["label_ids"]) < max_tokens_output_len:
+        data_points["label_ids"] += [pad_input_ids] * (max_tokens_output_len - len(data_points["label_ids"]))
+    return data_points
+
 def process_data_nat_inst(task_name, task_length=100):
     with open(task_name, "r") as read_content: 
         fields = json.load(read_content)
@@ -333,4 +492,25 @@ def process_data_nat_inst(task_name, task_length=100):
     fields["Instances"] = dataset_formatted
     return fields
 
+def preprocess_function_translate(examples, source_lang, target_lang, max_input_length, max_target_length):
+    prefix_translate = "translate English to French: "
+    inputs = [prefix_translate + example for example in examples[source_lang]]
+    targets = [example for example in examples[target_lang]]
+    # print(inputs[0], targets[0])
+    model_inputs = tokenizer(inputs, max_length=max_input_length, padding="max_length", truncation=True, )
+    # model_inputs = tokenizer(inputs, text_target=targets, max_length=128, truncation=True)
+    labels = tokenizer(targets, max_length=max_target_length, padding="max_length", truncation=True)
 
+    model_inputs["labels"] = labels["input_ids"]
+    return model_inputs
+
+def preprocess_function_summary(examples, max_input_length, max_target_length):
+    prefix = "summarize: "
+    inputs = [prefix + doc for doc in examples["document"]]
+    model_inputs = tokenizer(inputs, max_length=max_input_length, padding="max_length", truncation=True)
+
+    # Setup the tokenizer for targets
+    labels = tokenizer(examples["summary"], max_length=max_target_length, padding="max_length", truncation=True)
+
+    model_inputs["labels"] = labels["input_ids"]
+    return model_inputs

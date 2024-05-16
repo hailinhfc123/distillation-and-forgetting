@@ -14,8 +14,9 @@ from evaluate import load
 from UniEval.utils import convert_to_json
 from UniEval.metric.evaluator import get_evaluator
 from rouge import Rouge
-from ewc_utils import exact_match, em_evaluator, normalize_answer, evaluate
+from ewc_utils import exact_match, em_evaluator, normalize_answer, evaluate, evaluate_summary
 import json
+from ewc_utils import preprocess_function_summary
 
 
 
@@ -31,7 +32,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_small, cache_dir=cache_dir)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_small, cache_dir=cache_dir).to(device)
 
 # raw_datasets = load_dataset("xsum", cache_dir=cache_dir)
-raw_datasets = load_dataset("samsum", cache_dir=cache_dir)
+# raw_datasets = load_dataset("samsum", cache_dir=cache_dir)
 
 index_to_ans = {0: "A", 1: "B", 2: "C", 3: "D"}
 ans_to_index = {"A" : "0", "B" : "1", "C" : "2", "D": "3"}
@@ -49,50 +50,51 @@ max_input_length = 1024
 max_target_length = 128
 
 
-def evalute_summary(model_small_ewc, tokenizer, test_input_ids, labels):
-    task = 'summarization'
-    results_small_ewc = {}
-    progress_bar = tqdm(range(len(test_input_ids)))
-    num_right = len(test_input_ids)
-    group_len = 20
-    for a in range(0, len(test_input_ids)//group_len):
-        output_list, ref_list, src_list = [], [], []
-        for b in range(group_len):
-            index = a * group_len + b
-            if index >= len(test_input_ids):
-                continue
-            test_tensor = torch.tensor([test_input_ids[index]]).to(device)
-            preds = model_small_ewc.generate(test_tensor, max_new_tokens=max_target_length, do_sample=False)                                   
-            preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
 
-            output_list += preds
-            ref_list.append(labels[index])
-            # src_list.append(raw_datasets["test"][index]["document"])
-            src_list.append(raw_datasets["test"][index]["dialogue"])
+# def evalute_summary(model_small_ewc, tokenizer, test_input_ids, labels):
+#     task = 'summarization'
+#     results_small_ewc = {}
+#     progress_bar = tqdm(range(len(test_input_ids)))
+#     num_right = len(test_input_ids)
+#     group_len = 20
+#     for a in range(0, len(test_input_ids)//group_len):
+#         output_list, ref_list, src_list = [], [], []
+#         for b in range(group_len):
+#             index = a * group_len + b
+#             if index >= len(test_input_ids):
+#                 continue
+#             test_tensor = torch.tensor([test_input_ids[index]]).to(device)
+#             preds = model_small_ewc.generate(test_tensor, max_new_tokens=max_target_length, do_sample=False)                                   
+#             preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+
+#             output_list += preds
+#             ref_list.append(labels[index])
+#             # src_list.append(raw_datasets["test"][index]["document"])
+#             src_list.append(raw_datasets["test"][index]["dialogue"])
             
-        data = convert_to_json(output_list=output_list, 
-                               src_list=src_list, ref_list=ref_list)
+#         data = convert_to_json(output_list=output_list, 
+#                                src_list=src_list, ref_list=ref_list)
       
-        evaluator = get_evaluator(task, cache_dir=cache_dir)
+#         evaluator = get_evaluator(task, cache_dir=cache_dir)
         
-        eval_scores = evaluator.evaluate(data)
-        # except ZeroDivisionError:
-        #     continue
-        # print(eval_scores)
-        for eval_score in eval_scores:
-            for key, value in eval_score.items():
-                if key not in results_small_ewc:
-                    results_small_ewc[key] = value
-                else:
-                    results_small_ewc[key] += value
-        progress_bar.update(group_len)
-    results_small_ewc_agg = {}
+#         eval_scores = evaluator.evaluate(data)
+#         # except ZeroDivisionError:
+#         #     continue
+#         # print(eval_scores)
+#         for eval_score in eval_scores:
+#             for key, value in eval_score.items():
+#                 if key not in results_small_ewc:
+#                     results_small_ewc[key] = value
+#                 else:
+#                     results_small_ewc[key] += value
+#         progress_bar.update(group_len)
+#     results_small_ewc_agg = {}
     
-    for k, v in results_small_ewc.items():
-        results_small_ewc_agg[k] = v/num_right
-#        print(f"For model {model}, the average score is: ")
-    print(results_small_ewc_agg)
-    print(f"Number of non empty answers is {num_right}")
+#     for k, v in results_small_ewc.items():
+#         results_small_ewc_agg[k] = v/num_right
+# #        print(f"For model {model}, the average score is: ")
+#     print(results_small_ewc_agg)
+#     print(f"Number of non empty answers is {num_right}")
 
 def evalute_word_ouput(model_small_ewc, tokenizer, test_input_ids, labels, decode_output_dict, use_sentiment=True):
     results_small_ewc = {}
@@ -216,7 +218,10 @@ def preprocess_function_race(data_points):
             
         text = prefix + data_points["article"][i] + q + ". Choices: " + choices
         inputs.append(text)
+    
     model_inputs = tokenizer(inputs, truncation=True)
+    model_inputs["label"] = list(map(lambda x: int(ans_to_index[x]), data_points["answer"]))
+    
     
     return model_inputs
     
@@ -320,19 +325,6 @@ def preprocess_function_translate(examples):
     return model_inputs
 
 
-def preprocess_function_summary(examples):
-    prefix = "summarize: "
-    # inputs = [prefix + doc for doc in examples["document"]]
-    inputs = [prefix + doc for doc in examples["dialogue"]]
-    
-    model_inputs = tokenizer(inputs, max_length=max_input_length, truncation=True)
-
-    # Setup the tokenizer for targets
-    labels = tokenizer(text_target=examples["summary"], max_length=max_target_length, truncation=True)
-
-    model_inputs["labels"] = labels["input_ids"]
-    return model_inputs
-
 def preprocess_function_nat_inst(examples):
     inputs = [prefix + doc for doc in examples["input"]]
     
@@ -384,42 +376,42 @@ def task_list_filtered_category(task_list, category):
 
 # model_list = ["google/flan-t5-small", "/scratches/dialfs/alta/hln35/distillation/model/flant5_small_lr_10-4_race_finetuning_epoch2", "/scratches/dialfs/alta/hln35/distillation/model/flant5_small_lr_10-4_race_distill_epoch2", "google/flan-t5-large", "google/flan-t5-base"]
 
-model_list = ["/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance_1e-04_epoch2",
-              "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance_1e-02_epoch2",
-              "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance_1e+00_epoch2",
-              "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_translation_ref_importance_1e-04_epoch2",
-              "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_translation_ref_importance_1e-02_epoch2",
-              "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_translation_ref_importance_1e+00_epoch2",
-              ]
-# for dataset in task_list_nat_inst:
-# for dataset in tasks_list:
-for dataset, split, preprocess_func, ans_to_id_dict in task_list:
-    for model in model_list:
-        print(f"We are running model {model}")
-        print(f"We are running {dataset}")
-        model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir, local_files_only=True).to(device)
-        # model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir).to(device)
+# model_list = ["/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance_1e-04_epoch2",
+#               "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance_1e-02_epoch2",
+#               "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance_1e+00_epoch2",
+#               "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_translation_ref_importance_1e-04_epoch2",
+#               "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_translation_ref_importance_1e-02_epoch2",
+#               "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_translation_ref_importance_1e+00_epoch2",
+#               ]
+# # for dataset in task_list_nat_inst:
+# # for dataset in tasks_list:
+# for dataset, split, preprocess_func, ans_to_id_dict in task_list:
+#     for model in model_list:
+#         print(f"We are running model {model}")
+#         print(f"We are running {dataset}")
+#         model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir, local_files_only=True).to(device)
+#         # model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir).to(device)
         
     
-        #raw_datasets = load_dataset(dataset, split=split, cache_dir=cache_dir).select(range(10))
-        raw_datasets = load_dataset(dataset, split=split, cache_dir=cache_dir)
+#         #raw_datasets = load_dataset(dataset, split=split, cache_dir=cache_dir).select(range(10))
+#         raw_datasets = load_dataset(dataset, split=split, cache_dir=cache_dir)
         
-        # dataset_dict = process_data_nat_inst(dataset)
-        # print(f"Categories: {dataset_dict['Categories']}")
-        # print(f"Input language: {dataset_dict['Input_language']}, Output language: {dataset_dict['Output_language']}")
-        # prefix = dataset_dict["Definition"][0][0]
-        # raw_datasets = dataset_dict["Instances"]
+#         # dataset_dict = process_data_nat_inst(dataset)
+#         # print(f"Categories: {dataset_dict['Categories']}")
+#         # print(f"Input language: {dataset_dict['Input_language']}, Output language: {dataset_dict['Output_language']}")
+#         # prefix = dataset_dict["Definition"][0][0]
+#         # raw_datasets = dataset_dict["Instances"]
         
-        tokenized_datasets = raw_datasets.map(preprocess_func, batched=True)
-        # tokenized_datasets = raw_datasets.map(preprocess_function_nat_inst, batched=True)
-        labels = list(map(lambda x: str(x), tokenized_datasets["label"]))
-        # labels = tokenized_datasets["output"]
-        # print(labels)
-        # labels = tokenizer.batch_decode(tokenized_datasets["label"], skip_special_tokens=True)
-        test_input_ids = tokenized_datasets["input_ids"]
-        # print(test_input_ids)
-        model_test_accuracy = evaluate(model_small_ewc, test_input_ids, labels, ans_to_id_dict)
-        print(f"Accuracy is {model_test_accuracy/len(test_input_ids)}")
+#         tokenized_datasets = raw_datasets.map(preprocess_func, batched=True)
+#         # tokenized_datasets = raw_datasets.map(preprocess_function_nat_inst, batched=True)
+#         labels = list(map(lambda x: str(x), tokenized_datasets["label"]))
+#         # labels = tokenized_datasets["output"]
+#         # print(labels)
+#         # labels = tokenizer.batch_decode(tokenized_datasets["label"], skip_special_tokens=True)
+#         test_input_ids = tokenized_datasets["input_ids"]
+#         # print(test_input_ids)
+#         model_test_accuracy = evaluate(model_small_ewc, test_input_ids, labels, ans_to_id_dict)
+#         print(f"Accuracy is {model_test_accuracy/len(test_input_ids)}")
 
     
 
@@ -514,3 +506,71 @@ for dataset, split, preprocess_func, ans_to_id_dict in task_list:
 #     model = AutoModelForSeq2SeqLM.from_pretrained(m, local_files_only=True).to(device)
 #     model_test_accuracy = evaluate(model, test_input_ids, test_labels)
 #     print(f"Accuracy is {model_test_accuracy/len(test_input_ids)}")
+
+model_list = ["/scratches/dialfs/alta/hln35/model/flant5_small_distill_xsum_batchsize_1_10k_samples_epoch0", 
+              "/scratches/dialfs/alta/hln35/model/flant5_small_distill_xsum_batchsize_1_10k_samples_epoch1", 
+              "/scratches/dialfs/alta/hln35/model/flant5_small_distill_xsum_batchsize_1_10k_samples_epoch2",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_10k_samples_epoch0",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_10k_samples_epoch1",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_10k_samples_epoch2",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_distill_xsum_batchsize_4_50k_samples_epoch0",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_distill_xsum_batchsize_4_50k_samples_epoch1",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_distill_xsum_batchsize_4_50k_samples_epoch2",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_epoch0",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_epoch1",
+              "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_epoch2",
+             ]
+batch_size = 8
+
+#Evaluate summary
+
+# # evaluator = get_evaluator('summarization', cache_dir=cache_dir)
+# evaluator = load('rouge')
+# summary_datapoints = load_dataset("xsum", cache_dir=cache_dir)
+# tokenized_summary = summary_datapoints.map(lambda b: preprocess_function_summary(b, max_input_length, max_target_length), 
+#                                                batched=True)
+# tokenized_summary.set_format("torch")
+# test_summary_set = tokenized_summary["test"]
+# # test_summary_set = tokenized_summary.set_format("torch")
+# test_summary_dataloader = DataLoader(test_summary_set, batch_size=batch_size)
+
+# for model in model_list:
+#     model_small_trained = model
+#     model_small_trained = AutoModelForSeq2SeqLM.from_pretrained(model_small_trained, local_files_only=True).to(device)
+#     test_scores = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader,
+#                 batch_size=batch_size, src_field="document", ref_field="summary", evaluator=evaluator)
+
+#Evaluate classification
+task_list = [(("race", "all"), "test", preprocess_function_race, ans_id_dict), (("facebook/anli",""), "test_r1", preprocess_anli, ans_id_dict_3_options), (("sst2",""), "validation", preprocess_sst2, ans_id_dict_2_options), (("google/boolq",""), "validation", preprocess_boolq, ans_id_dict_2_options), (("SetFit/mnli",""), "validation", preprocess_mnli, ans_id_dict_3_options), (("facebook/anli",""), "test_r2", preprocess_anli, ans_id_dict_3_options), (("facebook/anli",""), "test_r3", preprocess_anli, ans_id_dict_3_options)]
+# for dataset in tasks_list:
+
+for model in model_list:
+    eval_scores = {}
+    for dataset, split, preprocess_func, ans_to_id_dict in task_list:
+        print(f"We are running model {model}")
+        print(f"We are running {dataset}")
+        #model_dataset = model + "_" + dataset
+        model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir, local_files_only=True).to(device)
+        # model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir).to(device)
+        
+    
+        #raw_datasets = load_dataset(dataset, split=split, cache_dir=cache_dir).select(range(10))
+        path = dataset[0]
+        name = None if dataset[1] == "" else dataset[1]
+        raw_datasets = load_dataset(path=path, name=name, split=split, cache_dir=cache_dir)
+        
+        tokenized_datasets = raw_datasets.map(preprocess_func, batched=True)
+        labels = list(map(lambda x: str(x), tokenized_datasets["label"]))
+        # labels = tokenized_datasets["output"]
+        # print(labels)
+        # labels = tokenizer.batch_decode(tokenized_datasets["label"], skip_special_tokens=True)
+        test_input_ids = tokenized_datasets["input_ids"]
+        # print(test_input_ids)
+        model_test_accuracy = evaluate(model_small_ewc, test_input_ids, labels, ans_to_id_dict)
+        print(f"Accuracy is {model_test_accuracy/len(test_input_ids)}")
+        eval_scores[dataset[0]+split] = model_test_accuracy/len(test_input_ids)
+    model_name = model.split("/")[-1]
+    print(eval_scores)
+    with open(f"log_eval/log_evaluation_{model_name}.json", "a") as outfile: 
+        json.dump(eval_scores, outfile)
+

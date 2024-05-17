@@ -480,6 +480,9 @@ def pad_dataset(data_points, tokenizer, max_tokens_output_len):
     
     if len(data_points["label_ids"]) < max_tokens_output_len:
         data_points["label_ids"] += [pad_input_ids] * (max_tokens_output_len - len(data_points["label_ids"]))
+    elif len(data_points["label_ids"]) > max_tokens_output_len:
+        data_points["label_ids"] = data_points["label_ids"][:max_tokens_output_len]
+        
     return data_points
 
 def process_data_nat_inst(task_name, task_length=100):

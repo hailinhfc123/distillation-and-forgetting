@@ -344,21 +344,6 @@ task_list = [("facebook/anli", "test_r1", preprocess_anli, ans_id_dict_3_options
 # task_list = [("google/boolq", "validation", preprocess_boolq, ans_id_dict_2_options)]
 # ("piqa", "validation", preprocess_anli, decode_output_dict_anli), ("google/boolq", "validation", preprocess_boolq, decode_output_dict_boolq),
 
-with open("/scratches/dialfs/alta/hln35/natural-instructions/splits/default/test_tasks.txt", "r") as file: 
-    task_list_nat_inst = file.read().split("\n")
-    task_list_nat_inst = list(map( lambda x: "/scratches/dialfs/alta/hln35/natural-instructions/tasks/" + x + ".json", task_list_nat_inst))
-
-def task_list_filtered_category(task_list, category):
-    res = []
-    for task_name in task_list:
-        if task_name:
-            with open(task_name, "r") as read_content: 
-                fields = json.load(read_content)
-                # print(fields["Categories"])
-                if category in fields["Categories"]:
-                    res.append(task_name)
-    return res
-
 
 # model_list = ["/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_distill_xsum_keep_race_batchsize_4_50k_samples_importance_1e+00_epoch2", 
 #               "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_distill_xsum_keep_race_batchsize_4_50k_samples_importance_5e-01_epoch2", 
@@ -369,17 +354,17 @@ def task_list_filtered_category(task_list, category):
 #               "google/flan-t5-large",
 #              ]
 model_list = [
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+01_epoch0", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+00_epoch0", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_5e-01_epoch0", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-02_epoch0", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-01_epoch0", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-04_epoch0", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+01_epoch0", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+00_epoch0", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_5e-01_epoch0", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-02_epoch0", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-01_epoch0", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-04_epoch0", 
 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+01_epoch1", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+00_epoch1", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_5e-01_epoch1", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-02_epoch1", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+01_epoch1", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e+00_epoch1", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_5e-01_epoch1", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-02_epoch1", 
 "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-01_epoch1", 
 "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_4_full_samples_importance_1e-04_epoch1", 
 
@@ -395,8 +380,8 @@ batch_size = 8
 
 #Evaluate summary
 
-# evaluator = get_evaluator('summarization', cache_dir=cache_dir)
-rouge_evaluator = load('rouge')
+unieval_evaluator = get_evaluator('summarization', cache_dir=cache_dir)
+# rouge_evaluator = load('rouge')
 
 #NMT evaluator
 model_path = download_model("Unbabel/wmt22-comet-da", saving_directory="/scratches/dialfs/alta/hln35/.cache")
@@ -420,46 +405,46 @@ test_translate_set = tokenized_translate
 # test_translate_set = tokenized_translate.set_format("torch")
 test_translate_dataloader = DataLoader(test_translate_set, batch_size=batch_size)
 
-# for model in model_list:
-#     model_small_trained = model
-#     model_small_trained = AutoModelForSeq2SeqLM.from_pretrained(model_small_trained, local_files_only=True).to(device)  
-#     test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="document", ref_field="summary", evaluator=rouge_evaluator)
+for model in model_list:
+    model_small_trained = model
+    model_small_trained = AutoModelForSeq2SeqLM.from_pretrained(model_small_trained, local_files_only=True).to(device)  
+    test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="document", ref_field="summary", evaluator=unieval_evaluator)
 #     test_scores_mt = evaluate_mt(model=model_small_trained, tokenizer=tokenizer, data_loader=test_translate_dataloader, batch_size=batch_size, source_lang=source_lang, target_lang=target_lang, model_evaluator=comet_evaluator) 
     # test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="document", ref_field="summary")
     
 #Evaluate classification
-task_list = [(("race", "all"), "test", preprocess_function_race, ans_id_dict), (("facebook/anli",""), "test_r1", preprocess_anli, ans_id_dict_3_options), (("sst2",""), "validation", preprocess_sst2, ans_id_dict_2_options), (("google/boolq",""), "validation", preprocess_boolq, ans_id_dict_2_options), (("SetFit/mnli",""), "validation", preprocess_mnli, ans_id_dict_3_options), (("facebook/anli",""), "test_r2", preprocess_anli, ans_id_dict_3_options), (("facebook/anli",""), "test_r3", preprocess_anli, ans_id_dict_3_options)]
-# for dataset in tasks_list:
+# task_list = [(("race", "all"), "test", preprocess_function_race, ans_id_dict), (("facebook/anli",""), "test_r1", preprocess_anli, ans_id_dict_3_options), (("sst2",""), "validation", preprocess_sst2, ans_id_dict_2_options), (("google/boolq",""), "validation", preprocess_boolq, ans_id_dict_2_options), (("SetFit/mnli",""), "validation", preprocess_mnli, ans_id_dict_3_options), (("facebook/anli",""), "test_r2", preprocess_anli, ans_id_dict_3_options), (("facebook/anli",""), "test_r3", preprocess_anli, ans_id_dict_3_options)]
+# # for dataset in tasks_list:
 
-for model in model_list:
-    eval_scores = {}
-    for dataset, split, preprocess_func, ans_to_id_dict in task_list:
-        print(f"We are running model {model}")
-        print(f"We are running {dataset}")
-        #model_dataset = model + "_" + dataset
-        model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir, local_files_only=True).to(device)
-        # model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir).to(device)
+# for model in model_list:
+#     eval_scores = {}
+#     for dataset, split, preprocess_func, ans_to_id_dict in task_list:
+#         print(f"We are running model {model}")
+#         print(f"We are running {dataset}")
+#         #model_dataset = model + "_" + dataset
+#         model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir, local_files_only=True).to(device)
+#         # model_small_ewc = AutoModelForSeq2SeqLM.from_pretrained(model, cache_dir=cache_dir).to(device)
         
     
-        #raw_datasets = load_dataset(dataset, split=split, cache_dir=cache_dir).select(range(10))
-        path = dataset[0]
-        name = None if dataset[1] == "" else dataset[1]
-        raw_datasets = load_dataset(path=path, name=name, split=split, cache_dir=cache_dir)
+#         #raw_datasets = load_dataset(dataset, split=split, cache_dir=cache_dir).select(range(10))
+#         path = dataset[0]
+#         name = None if dataset[1] == "" else dataset[1]
+#         raw_datasets = load_dataset(path=path, name=name, split=split, cache_dir=cache_dir)
         
-        tokenized_datasets = raw_datasets.map(preprocess_func, batched=True)
-        labels = list(map(lambda x: str(x), tokenized_datasets["label"]))
-        # labels = tokenized_datasets["output"]
-        # print(labels)
-        # labels = tokenizer.batch_decode(tokenized_datasets["label"], skip_special_tokens=True)
-        test_input_ids = tokenized_datasets["input_ids"]
-        # print(test_input_ids)
-        model_test_accuracy = evaluate(model_small_ewc, test_input_ids, labels, ans_to_id_dict)
-        print(f"Accuracy is {model_test_accuracy/len(test_input_ids)}")
-        eval_scores[dataset[0]+split] = model_test_accuracy/len(test_input_ids)
-    model_name = model.split("/")[-1]
-    print(eval_scores)
-    with open(f"log_eval/log_evaluation_{model_name}.json", "a") as outfile: 
-        json.dump(eval_scores, outfile)
-    model_small_trained = model_small_ewc
-    test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="document", ref_field="summary", evaluator=rouge_evaluator)
-    test_scores_mt = evaluate_mt(model=model_small_trained, tokenizer=tokenizer, data_loader=test_translate_dataloader, batch_size=batch_size, source_lang=source_lang, target_lang=target_lang, model_evaluator=comet_evaluator) 
+#         tokenized_datasets = raw_datasets.map(preprocess_func, batched=True)
+#         labels = list(map(lambda x: str(x), tokenized_datasets["label"]))
+#         # labels = tokenized_datasets["output"]
+#         # print(labels)
+#         # labels = tokenizer.batch_decode(tokenized_datasets["label"], skip_special_tokens=True)
+#         test_input_ids = tokenized_datasets["input_ids"]
+#         # print(test_input_ids)
+#         model_test_accuracy = evaluate(model_small_ewc, test_input_ids, labels, ans_to_id_dict)
+#         print(f"Accuracy is {model_test_accuracy/len(test_input_ids)}")
+#         eval_scores[dataset[0]+split] = model_test_accuracy/len(test_input_ids)
+#     model_name = model.split("/")[-1]
+#     print(eval_scores)
+#     with open(f"log_eval/log_evaluation_{model_name}.json", "a") as outfile: 
+#         json.dump(eval_scores, outfile)
+#     model_small_trained = model_small_ewc
+#     test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="document", ref_field="summary", evaluator=rouge_evaluator)
+#     test_scores_mt = evaluate_mt(model=model_small_trained, tokenizer=tokenizer, data_loader=test_translate_dataloader, batch_size=batch_size, source_lang=source_lang, target_lang=target_lang, model_evaluator=comet_evaluator) 

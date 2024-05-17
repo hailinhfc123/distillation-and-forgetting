@@ -134,7 +134,7 @@ with open("/scratches/dialfs/alta/hln35/distillation/ewc_after_race_full_instanc
 # ewc_race_tran._precision_matrices = model_tran_recovered
 # model_name = "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance"
 batch_size = 4
-comment_to_file_name = f"flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_{batch_size}_full_samples"
+file_name = f"flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_{batch_size}_full_samples"
 
 tokenized_datasets = data_points.map(preprocess_function, batched=True)
 tokenized_summary = summary_datapoints.map(lambda b: preprocess_function_summary(b, max_input_length, max_target_length), 
@@ -177,7 +177,7 @@ for importance in [1e-2, 1e-4]:
 # for importance in [ 1e-2]:
 # for importance in [ 1e-4]:
     print(importance)
-    comment_to_file_name += f"_importance_{'{:.0e}'.format(importance)}"
+    comment_to_file_name = file_name + f"_importance_{'{:.0e}'.format(importance)}"
     
     model = AutoModelForSeq2SeqLM.from_pretrained(model_small).to(device)
     optimizer = AdamW(model.parameters(), lr=1e-4)

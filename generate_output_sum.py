@@ -23,7 +23,7 @@ model_small = "google/flan-t5-small"
 model_large = "google/flan-t5-large"
 if torch.cuda.is_available() == False:
     raise Exception("Cuda is not available, please enable cuda")
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
 print(device)
 max_input_length = 1024
 max_target_length = 128
@@ -47,8 +47,8 @@ def batch_generator(model, data_loader, max_new_tokens, batch_size):
         test_tensor = batch["input_ids"].to(device)
         preds = model.generate(test_tensor, max_new_tokens=max_new_tokens, do_sample=False)   
         progress_bar.update(batch_size)
-        preds_text = tokenizer.batch_decode(preds, skip_special_tokens=True)
-        print(preds_text)
+        #preds_text = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        #print(preds_text)
         return_pred_list += preds
     return return_pred_list        
 

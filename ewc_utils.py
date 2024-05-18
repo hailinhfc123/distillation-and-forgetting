@@ -26,7 +26,7 @@ def variable(t: torch.Tensor, use_cuda=True, **kwargs):
     return t
 if torch.cuda.is_available() == False:
     raise Exception("Cuda is not available, please enable cuda")
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
 index_to_ans = {0: "A", 1: "B", 2: "C", 3: "D"}
 ans_to_index = {"A" : "0", "B" : "1", "C" : "2", "D": "3"}
 ans_id_dict = {71: "A", 272: "B", 205: "C", 309: "D"}

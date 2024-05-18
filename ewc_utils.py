@@ -116,7 +116,7 @@ class EWC(object):
         return loss
 
 
-def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader, epochs:int, comment_to_file_name: str, batch_size, evaluator):
+def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader, epochs:int, comment_to_file_name: str, batch_size, validation_input_ids, validation_labels, evaluator):
     model.train()
     writer = SummaryWriter(comment=comment_to_file_name)
     epoch_loss = 0
@@ -125,6 +125,7 @@ def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.ut
     progress_bar = tqdm(range(num_training_steps))
     for epoch in range(epochs):
         for step, batch in enumerate(data_loader):
+            current_step = (step + epoch * len_dataloader) * batch_size
             input = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"]
@@ -141,9 +142,13 @@ def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.ut
             # print(loss)
             # batch_size = len(loss)
             # for i, l in enumerate(loss):
-            writer.add_scalar("Loss/train", loss.data, (step + epoch * len_dataloader) * batch_size)
+            writer.add_scalar("Loss/train", loss.data, current_step)
             optimizer.step()
             progress_bar.update(batch_size)
+            if current_step%10000==0:
+                eval_result = evaluate(model, validation_input_ids, validation_labels)
+                writer.add_scalar("Validation accuracy", eval_result, current_step)
+                print(f"Performance on validation set is {eval_result}")
         model_name = "/scratches/dialfs/alta/hln35/model/" + comment_to_file_name
         model.save_pretrained(f"{model_name}_epoch{epoch}")
     writer.flush()

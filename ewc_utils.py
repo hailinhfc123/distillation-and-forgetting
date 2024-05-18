@@ -16,7 +16,9 @@ import string
 from torch.utils.tensorboard import SummaryWriter
 from rouge import Rouge
 import datetime
-
+from UniEval.metric.evaluator import SumEvaluator
+from UniEval.utils import convert_to_json
+from UniEval.metric.evaluator import get_evaluator
 
 def variable(t: torch.Tensor, use_cuda=True, **kwargs):
     if torch.cuda.is_available() and use_cuda:
@@ -124,11 +126,14 @@ def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.ut
     for epoch in range(epochs):
         for step, batch in enumerate(data_loader):
             input = batch["input_ids"].to(device)
-            labels = batch["labels"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            labels = batch["labels"]
+            labels[labels==0] = -100 
+            labels = labels.to(device)
             # print(labels)
             # labels = torch.squeeze(labels, dim=0)
             optimizer.zero_grad()
-            output = model(input_ids=input, labels=labels)
+            output = model(input_ids=input, labels=labels, attention_mask=attention_mask)
             loss = output.loss
             # loss = F.cross_entropy(output, target)
             # epoch_loss += loss.data[0]
@@ -258,10 +263,13 @@ def evaluate(model, input_ids, labels, ans_id_dict=ans_id_dict):
 
 def evaluate_summary(model, tokenizer, data_loader, batch_size, src_field, ref_field, evaluator):
     max_target_length = 128
-    if evaluator.name == "rouge":
-        print("Using Rouge")
+    if isinstance(evaluator, SumEvaluator):
+        print("Using UniEval")
     else:
-        print("Not using Rouge")
+        if evaluator.name == "rouge":
+            print("Using Rouge")
+        else:
+            print("Not using Rouge")
     model_name = model.config.name_or_path
     random_sentence = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. In fermentum posuere urna nec tincidunt praesent. Arcu risus quis varius quam quisque."
     print(model_name)
@@ -288,9 +296,8 @@ def evaluate_summary(model, tokenizer, data_loader, batch_size, src_field, ref_f
 
     #src_list = data_loader[src_field]
     #ref_list = data_loader[ref_field]
-    if evaluator.name == "rouge":
-        eval_scores = evaluator.compute(predictions=output_list, references=ref_list)
-    else:
+
+    if isinstance(evaluator, SumEvaluator):
         num_ans = len(output_list)
         results_small_dict = {}
         all_data = convert_to_json(output_list=output_list, 
@@ -305,6 +312,9 @@ def evaluate_summary(model, tokenizer, data_loader, batch_size, src_field, ref_f
         for k, v in results_small_dict.items():
             results_small_dict[k] = v/num_ans
         eval_scores = results_small_dict
+    else:
+        if evaluator.name == "rouge":
+            eval_scores = evaluator.compute(predictions=output_list, references=ref_list)
     
     # model_output = model_evaluator.predict(text_list, batch_size=batch_size)
     print(f"For model {model_name} the average score on the test set is ")

@@ -26,7 +26,7 @@ os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
 model_small = "google/flan-t5-small"
 if torch.cuda.is_available() == False:
     raise Exception("Cuda is not available, please enable cuda")
-device = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 tokenizer = AutoTokenizer.from_pretrained(model_small, cache_dir=cache_dir)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_small, cache_dir=cache_dir).to(device)
@@ -381,8 +381,9 @@ batch_size = 8
 #Evaluate summary
 
 unieval_evaluator = get_evaluator('summarization', cache_dir=cache_dir)
-# rouge_evaluator = load('rouge')
-
+rouge_evaluator = load('rouge')
+#print(unieval_evaluator)
+#print(rouge_evaluator)
 #NMT evaluator
 model_path = download_model("Unbabel/wmt22-comet-da", saving_directory="/scratches/dialfs/alta/hln35/.cache")
 comet_evaluator = load_from_checkpoint(model_path)

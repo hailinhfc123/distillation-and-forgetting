@@ -527,3 +527,24 @@ def preprocess_function_summary(examples, max_input_length, max_target_length):
 
     model_inputs["labels"] = labels["input_ids"]
     return model_inputs
+
+def preprocess_function_race(data_points, max_input_length):
+    prefix = "answer this question by choosing the best choice either A, B, C, or D. Given the context is:"
+    inputs = []
+    for i in range(len(data_points["question"])):
+        if len(data_points["options"][i]) != 4:
+            continue
+        labels = list(ans_to_index.keys())
+        q = data_points["question"][i]
+        choices = ""
+        choice = ""
+        for t in range(len(labels)):
+            choices += labels[t] + " " + data_points["options"][i][t] + ". "
+            
+        text = prefix + data_points["article"][i] + q + ". Choices: " + choices
+        inputs.append(text)
+    
+    model_inputs = tokenizer(inputs, max_length=max_input_length, padding="max_length", truncation=True)
+    model_inputs["label"] = list(map(lambda x: int(ans_to_index[x]), data_points["answer"]))
+    
+    return model_inputs

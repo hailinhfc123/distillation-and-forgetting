@@ -550,6 +550,8 @@ def preprocess_function_race(data_points, max_input_length):
         inputs.append(text)
     
     model_inputs = tokenizer(inputs, max_length=max_input_length, padding="max_length", truncation=True)
-    model_inputs["label"] = list(map(lambda x: int(ans_to_index[x]), data_points["answer"]))
+    labels = tokenizer(data_points["answer"], max_length=2, padding="max_length", truncation=True)
+    # model_inputs["label"] = list(map(lambda x: int(ans_to_index[x]), data_points["answer"]))
+    model_inputs["labels"] = labels["input_ids"]
     
     return model_inputs

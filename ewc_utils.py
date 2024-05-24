@@ -19,6 +19,7 @@ import datetime
 from UniEval.metric.evaluator import SumEvaluator
 from UniEval.utils import convert_to_json
 from UniEval.metric.evaluator import get_evaluator
+from abc import ABC, abstractmethod
 
 def variable(t: torch.Tensor, use_cuda=True, **kwargs):
     if torch.cuda.is_available() and use_cuda:
@@ -34,7 +35,13 @@ id_ans_dict = {"A": 71, "B": 272, "C": 205, "D": 309}
 model_small = "google/flan-t5-small"
 tokenizer = AutoTokenizer.from_pretrained(model_small)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_small).to(device)
-class EWC(object):
+
+class Regularization(ABC):
+    @abstractmethod
+    def penalty(self):
+        pass
+
+class EWC(Regularization):
     def __init__(self, model: nn.Module, dataset:torch.utils.data.DataLoader, use_generate:bool, use_ref:bool):
 
         self.model = model
@@ -114,6 +121,26 @@ class EWC(object):
             _loss = self._precision_matrices[n] * (p - self._means[n]) ** 2
             loss += _loss.sum()
         return loss
+    
+class L2(Regularization):
+    def __init__(self, model: nn.Module):
+
+        self.model = model
+        self.params = {n: p for n, p in self.model.named_parameters() if p.requires_grad}
+        self._means = {}
+        for n, p in deepcopy(self.params).items():
+            self._means[n] = p.data.to(device)
+        self._precision_matrices = {}
+        for n, p in model.named_parameters():
+            self._precision_matrices[n] = torch.ones_like(p) 
+    
+    def penalty(self, model: nn.Module):
+        loss = 0
+        for n, p in model.named_parameters():
+            
+            _loss = self._precision_matrices[n] * (p - self._means[n]) ** 2
+            loss += _loss.sum()
+        return loss
 
 
 def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader, epochs:int, comment_to_file_name: str, batch_size, validation_input_ids, validation_labels, evaluator):
@@ -156,7 +183,7 @@ def normal_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.ut
 
 
 def ewc_train(model: nn.Module, optimizer: torch.optim, data_loader: torch.utils.data.DataLoader,
-              ewc: EWC, importance: float, epochs:int, batch_size, validation_input_ids, validation_labels, comment_to_file_name: str):
+              ewc: Regularization, importance: float, epochs:int, batch_size, validation_input_ids, validation_labels, comment_to_file_name: str):
     writer = SummaryWriter(comment=comment_to_file_name)
     model.train()
     epoch_loss = 0

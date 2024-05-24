@@ -99,10 +99,10 @@ def compute_loss_generate(input_ids, max_new_tokens, model, tokenizer, device):
 # tokenized_datasets["train"] = tokenized_datasets["train"].add_column("labels", large_model_outputs)
 print("loading the output")
 # large_model_outputs = torch.load("/scratches/dialfs/alta/hln35/output_xsum_from_t5_large_50k.pt")
-large_model_outputs = torch.load("/scratches/dialfs/alta/hln35/output_xsum_from_t5_large_full.pt")
+large_model_outputs = torch.load("/scratches/dialfs/alta/hln35/output_race_from_t5_large_full.pt")
 print("output is loaded")
 #max_tokens_output_len = max(len(large_model_outputs["label_ids"][i]) for i in range(len(large_model_outputs["label_ids"])))  
-max_tokens_output_len = max_target_length
+max_tokens_output_len = 2
 print("Found max token output length") 
 large_model_outputs = large_model_outputs.map(lambda b : pad_dataset(b, tokenizer, max_tokens_output_len))
 
@@ -115,8 +115,8 @@ tokenized_race["train"].set_format("torch")
 train_race_set = tokenized_race["train"]
 # train_race_set = tokenized_race["train"].select(range(200))
 # Use for distill
-# train_race_set = train_race_set.remove_columns("labels")
-# train_race_set = train_race_set.add_column("labels", large_model_outputs["label_ids"])
+train_race_set = train_race_set.remove_columns("labels")
+train_race_set = train_race_set.add_column("labels", large_model_outputs["label_ids"])
 train_race_dataloader = DataLoader(train_race_set, batch_size=batch_size)
 
 eval_dataset = tokenized_race["validation"]
@@ -127,6 +127,6 @@ model = AutoModelForSeq2SeqLM.from_pretrained(model_small).to(device)
 optimizer = AdamW(model.parameters(), lr=1e-4)
 
 print("Start training")    
-# model_trained = normal_train(model=model, optimizer=optimizer, data_loader=train_race_dataloader, epochs=3, comment_to_file_name=f"flant5_small_finetune_race_batchsize_{batch_size}_full_samples", batch_size=batch_size, validation_input_ids = validation_input_ids, validation_labels = validation_labels, evaluator=None)
-model_trained = normal_train(model=model, optimizer=optimizer, data_loader=train_race_dataloader, epochs=3, comment_to_file_name=f"flant5_small_distill_race_batchsize_{batch_size}_full_samples_with_attention_mask", batch_size=batch_size, validation_input_ids = validation_input_ids, validation_labels = validation_labels, evaluator=None)
+model_trained = normal_train(model=model, optimizer=optimizer, data_loader=train_race_dataloader, epochs=3, comment_to_file_name=f"flant5_small_finetune_race_batchsize_{batch_size}_full_samples_with_attention_mask", batch_size=batch_size, validation_input_ids = validation_input_ids, validation_labels = validation_labels, evaluator=None)
+#model_trained = normal_train(model=model, optimizer=optimizer, data_loader=train_race_dataloader, epochs=3, comment_to_file_name=f"flant5_small_distill_race_batchsize_{batch_size}_full_samples_with_attention_mask", batch_size=batch_size, validation_input_ids = validation_input_ids, validation_labels = validation_labels, evaluator=None)
         

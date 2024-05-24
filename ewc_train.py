@@ -9,7 +9,7 @@ import json, re
 from tqdm.auto import tqdm
 import numpy as np
 from torch.utils.data import DataLoader
-from ewc_utils import EWC, ewc_train, evaluate, flatten_params, recover_flattened, preprocess_function_summary, pad_dataset
+from ewc_utils import EWC, ewc_train, evaluate, flatten_params, recover_flattened, preprocess_function_summary, pad_dataset, preprocess_function_race
 import pickle
 from matplotlib import pyplot as plt
 
@@ -94,8 +94,8 @@ def compute_loss_generate(input_ids, max_new_tokens, model, tokenizer, device):
 #     ewc_race_tran = pickle.load(fp)
 # with open("/scratches/dialfs/alta/hln35/distillation/ewc_after_translate_10k_instance_use_ref.txt", "rb") as fp:
 #     ewc_race_tran_ref = pickle.load(fp)
-# with open("/scratches/dialfs/alta/hln35/distillation/ewc_after_summary_instance.txt", "rb") as fp:
-#     ewc_race_sum = pickle.load(fp)
+with open("/scratches/dialfs/alta/hln35/distillation/ewc_after_summary_instance.txt", "rb") as fp:
+    ewc_race_sum = pickle.load(fp)
 # with open("/scratches/dialfs/alta/hln35/distillation/ewc_after_summary_10k_instance_use_ref.txt", "rb") as fp:
 #     ewc_race_sum_ref = pickle.load(fp)
 # with open("/scratches/dialfs/alta/hln35/distillation/ewc_after_data2text_1k_each_instance.txt", "rb") as fp:
@@ -134,29 +134,32 @@ with open("/scratches/dialfs/alta/hln35/distillation/ewc_after_race_full_instanc
 # ewc_race_tran._precision_matrices = model_tran_recovered
 # model_name = "/scratches/dialfs/alta/hln35/model/flant5_small_lr_10-4_race_ewc_after_summarisation_ref_importance"
 batch_size = 4
-file_name = f"flant5_small_ewc_train_finetune_xsum_keep_race_batchsize_{batch_size}_full_samples"
+file_name = f"flant5_small_ewc_train_finetune_race_keep_xsum_batchsize_{batch_size}_full_samples"
 
 tokenized_datasets = data_points.map(preprocess_function, batched=True)
 tokenized_summary = summary_datapoints.map(lambda b: preprocess_function_summary(b, max_input_length, max_target_length), 
                                                batched=True)
+race_datapoints = load_dataset("race", "all", cache_dir=cache_dir)
+tokenized_race = race_datapoints.map(lambda b: preprocess_function_race(b, max_input_length), 
+                                               batched=True)
+tokenized_race["train"].set_format("torch")
+train_race_set = tokenized_race["train"]
+
+# train_race_set = tokenized_race["train"].select(range(200))
+# Use for distill
+# train_race_set = train_race_set.remove_columns("labels")
+# train_race_set = train_race_set.add_column("labels", large_model_outputs["label_ids"])
+train_race_dataloader = DataLoader(train_race_set, batch_size=batch_size)
+eval_dataset = tokenized_race["validation"]
+validation_input_ids = eval_dataset["input_ids"]
+validation_labels = eval_dataset['answer']
 
 # Load labels from large model results
-# with open('/scratches/dialfs/alta/hln35/distillation/QA_large_model_race_probability_output.txt') as f:
-#     large_model_outputs = json.load(f)
-# tokenized_datasets["train"] = tokenized_datasets["train"].add_column("labels", large_model_outputs)
-
-large_model_outputs = torch.load("/scratches/dialfs/alta/hln35/output_xsum_from_t5_large_50k.pt")
-max_tokens_output_len = 250
+large_model_outputs = torch.load("/scratches/dialfs/alta/hln35/output_xsum_from_t5_large_full.pt")
+max_tokens_output_len = max_target_length
 large_model_outputs = large_model_outputs.map(lambda b : pad_dataset(b, tokenizer, max_tokens_output_len))
 
-tokenized_datasets["train"].set_format("torch")
-train_dataset = tokenized_datasets["train"]
-test_dataset = tokenized_datasets["test"]
-eval_dataset = tokenized_datasets["validation"]
-train_dataloader = DataLoader(train_dataset, batch_size=1)
-test_dataloader = DataLoader(test_dataset, batch_size=1)
-eval_dataloader = DataLoader(eval_dataset, batch_size=1)
-
+# file_name = f"flant5_small_ewc_train_distill_xsum_keep_race_batchsize_{batch_size}_full_samples"
 tokenized_summary["train"].set_format("torch")
 # train_summary_set = tokenized_summary["train"].select(range(50000))
 train_summary_set = tokenized_summary["train"]
@@ -164,16 +167,13 @@ train_summary_set = tokenized_summary["train"]
 # train_summary_set = train_summary_set.add_column("labels", large_model_outputs["label_ids"])
 train_summary_dataloader = DataLoader(train_summary_set, batch_size=batch_size)
 
-validation_input_ids = eval_dataset["input_ids"]
-validation_labels = eval_dataset['answer']
-
 # for importance in [10, 1e-0, 5e-1, 1e-1 ,1e-2, 1e-4]:
-for importance in [1e-2, 1e-4]:
-# for importance in [ 1e-0, 1e-1]:
-# for importance in [10]:
+# for importance in [1e-4, 1e-2]:
+# for importance in [ 10, 1e-0]:
+for importance in [5e-1, 1e-1]:
 # for importance in [ 1e-0]:
 # for importance in [ 5e-1]:
-# for importance in [ 1e-1]:
+#for importance in [ 1e-1]:
 # for importance in [ 1e-2]:
 # for importance in [ 1e-4]:
     print(importance)
@@ -182,5 +182,6 @@ for importance in [1e-2, 1e-4]:
     model = AutoModelForSeq2SeqLM.from_pretrained(model_small).to(device)
     optimizer = AdamW(model.parameters(), lr=1e-4)
     
-    model_trained = ewc_train(model=model, optimizer=optimizer, data_loader=train_summary_dataloader, ewc=ewc_race, importance=importance, epochs=3, batch_size=batch_size, validation_input_ids=validation_input_ids, validation_labels=validation_labels, comment_to_file_name=comment_to_file_name)
+    # model_trained = ewc_train(model=model, optimizer=optimizer, data_loader=train_summary_dataloader, ewc=ewc_race, importance=importance, epochs=3, batch_size=batch_size, validation_input_ids=validation_input_ids, validation_labels=validation_labels, comment_to_file_name=comment_to_file_name)
+    model_trained = ewc_train(model=model, optimizer=optimizer, data_loader=train_race_dataloader, ewc=ewc_race_sum, importance=importance, epochs=3, batch_size=batch_size, validation_input_ids=validation_input_ids, validation_labels=validation_labels, comment_to_file_name=comment_to_file_name)
         

@@ -27,7 +27,7 @@ def variable(t: torch.Tensor, use_cuda=True, **kwargs):
     return t
 if torch.cuda.is_available() == False:
     raise Exception("Cuda is not available, please enable cuda")
-device = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 index_to_ans = {0: "A", 1: "B", 2: "C", 3: "D"}
 ans_to_index = {"A" : "0", "B" : "1", "C" : "2", "D": "3"}
 ans_id_dict = {71: "A", 272: "B", 205: "C", 309: "D"}
@@ -293,7 +293,7 @@ def evaluate(model, input_ids, labels, ans_id_dict=ans_id_dict):
             result += 1
     return result
 
-def evaluate_summary(model, tokenizer, data_loader, batch_size, src_field, ref_field, evaluator):
+def evaluate_summary(model, tokenizer, data_loader, batch_size, src_field, ref_field, evaluator, dataset_name):
     max_target_length = 128
     if isinstance(evaluator, SumEvaluator):
         print("Using UniEval")
@@ -334,20 +334,26 @@ def evaluate_summary(model, tokenizer, data_loader, batch_size, src_field, ref_f
         results_small_dict = {}
         all_data = convert_to_json(output_list=output_list, 
                                    src_list=src_list, ref_list=ref_list)
-        eval_scores = evaluator.evaluate(all_data)
+        eval_scores = evaluator.evaluate(all_data, batch_size=batch_size)
         for eval_score in eval_scores:
-            for key, value in eval_score.items():
+            for key, value in eval_score.items():                
                 if key not in results_small_dict:
                     results_small_dict[key] = value
                 else:
                     results_small_dict[key] += value
-        for k, v in results_small_dict.items():
-            results_small_dict[k] = v/num_ans
+        for k, v in eval_scores[0].items():
+            name_k = dataset_name + k
+            results_small_dict[name_k] = results_small_dict[k]/num_ans
+            del results_small_dict[k] 
         eval_scores = results_small_dict
     else:
         if evaluator.name == "rouge":
             eval_scores = evaluator.compute(predictions=output_list, references=ref_list)
-    
+            eval_scores_cp = eval_scores.copy()
+            for k, v in eval_scores_cp.items(): 
+                name_k = dataset_name + k
+                eval_scores[name_k] = v
+                del eval_scores[k]
     # model_output = model_evaluator.predict(text_list, batch_size=batch_size)
     print(f"For model {model_name} the average score on the test set is ")
     # print(len(model_output["system_score"]))
@@ -551,6 +557,7 @@ def preprocess_function_translate(examples, source_lang, target_lang, max_input_
 
 def preprocess_function_summary(examples, max_input_length, max_target_length):
     prefix = "summarize: "
+    # inputs = [prefix + doc for doc in examples["dialogue"]]
     inputs = [prefix + doc for doc in examples["document"]]
     model_inputs = tokenizer(inputs, max_length=max_input_length, padding="max_length", truncation=True)
 

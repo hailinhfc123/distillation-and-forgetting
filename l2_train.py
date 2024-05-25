@@ -19,7 +19,7 @@ os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
 model_small = "google/flan-t5-small"
 if torch.cuda.is_available() == False:
     raise Exception("Cuda is not available, please enable cuda")
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
 
 tokenizer = AutoTokenizer.from_pretrained(model_small)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_small).to(device)
@@ -35,37 +35,6 @@ ans_id_dict = {71: "A", 272: "B", 205: "C", 309: "D"}
 max_input_length = 1024
 max_target_length = 128
 
-
-def compute_loss_generate(input_ids, max_new_tokens, model, tokenizer, device):
-    
-    decoder_input_ids = tokenizer("<pad>", add_special_tokens=False, return_tensors="pt").input_ids.to(device)
-    assert decoder_input_ids[0, 0].item() == model.config.decoder_start_token_id, "`decoder_input_ids` should correspond to `model.config.decoder_start_token_id`"
-    
-    # pass input_ids to encoder and to decoder and pass BOS token to decoder to retrieve first logit
-    outputs = model(input_ids, decoder_input_ids=decoder_input_ids, return_dict=True)
-    
-    # get encoded sequence
-    encoded_sequence = (outputs.encoder_last_hidden_state,)
-    # get logits
-    lm_logits = outputs.logits
-    # print(lm_logits)
-    # sample last token with highest prob
-    next_decoder_input_ids = torch.argmax(lm_logits[:, -1:], axis=-1)
-    l = torch.max(lm_logits[:, -1:])
-    
-    # concat
-    decoder_input_ids = torch.cat([decoder_input_ids, next_decoder_input_ids], axis=-1)
-    next_decoder_input_ids = "0"
-    no_tokens = 1
-    while next_decoder_input_ids and next_decoder_input_ids != 1 and no_tokens<=max_new_tokens:
-        lm_logits = model(None, encoder_outputs=encoded_sequence, decoder_input_ids=decoder_input_ids, return_dict=True).logits
-        l = torch.add(l,torch.max(lm_logits[:, -1:]))
-        # sample last token with highest prob again
-        next_decoder_input_ids = torch.argmax(lm_logits[:, -1:], axis=-1)
-        # concat again
-        decoder_input_ids = torch.cat([decoder_input_ids, next_decoder_input_ids], axis=-1)
-        no_tokens += 1
-    l.backward()
     
 batch_size = 4
 file_name = f"flant5_small_l2_train_finetune_race_keep_xsum_batchsize_{batch_size}_full_samples"
@@ -76,15 +45,15 @@ tokenized_summary = summary_datapoints.map(lambda b: preprocess_function_summary
                                                batched=True)
 l2 = L2(model=model)
 
-large_model_outputs = torch.load("/scratches/dialfs/alta/hln35/output_xsum_from_t5_large_50k.pt")
-max_tokens_output_len = max_target_length
-large_model_outputs = large_model_outputs.map(lambda b : pad_dataset(b, tokenizer, max_tokens_output_len))
+# large_model_outputs = torch.load("/scratches/dialfs/alta/hln35/output_xsum_from_t5_large_50k.pt")
+# max_tokens_output_len = max_target_length
+# large_model_outputs = large_model_outputs.map(lambda b : pad_dataset(b, tokenizer, max_tokens_output_len))
 
 tokenized_race["train"].set_format("torch")
 train_race_dataset = tokenized_race["train"]
 test_race_dataset = tokenized_race["test"]
 eval_race_dataset = tokenized_race["validation"]
-train_race_dataloader = DataLoader(train_race_dataset, batch_size=1)
+train_race_dataloader = DataLoader(train_race_dataset, batch_size=batch_size)
 test_race_dataloader = DataLoader(test_race_dataset, batch_size=1)
 eval_race_dataloader = DataLoader(eval_race_dataset, batch_size=1)
 
@@ -98,9 +67,9 @@ validation_input_ids = eval_race_dataset["input_ids"]
 validation_labels = eval_race_dataset['answer']
 
 # for importance in [10, 1e-0, 5e-1, 1e-1 ,1e-2, 1e-4]:
-for importance in [1e-2, 1e-4]:
+# for importance in [1e-2, 1e-4]:
 # for importance in [ 1e-0, 1e+2]:
-# for importance in [ 1e+4, 1e+6]:
+for importance in [ 1e+4, 1e+6]:
 # for importance in [10]:
 # for importance in [ 1e-0]:
 # for importance in [ 5e-1]:

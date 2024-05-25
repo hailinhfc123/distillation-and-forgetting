@@ -26,7 +26,7 @@ os.environ['TRANSFORMERS_CACHE'] = '/scratches/dialfs/alta/hln35/.cache'
 model_small = "google/flan-t5-small"
 if torch.cuda.is_available() == False:
     raise Exception("Cuda is not available, please enable cuda")
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
 
 tokenizer = AutoTokenizer.from_pretrained(model_small, cache_dir=cache_dir)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_small, cache_dir=cache_dir).to(device)
@@ -429,14 +429,15 @@ model_list = [
 # "/scratches/dialfs/alta/hln35/model/flant5_small_ewc_train_finetune_race_keep_xsum_batchsize_4_full_samples_importance_1e-04_epoch2",
 
 # ]
-# model_list = [
+model_list = [
 # "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_with_attention_mask_epoch0", 
 # "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_with_attention_mask_epoch1", 
-# "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_with_attention_mask_epoch2", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_with_attention_mask_epoch2", 
+"/scratches/dialfs/alta/hln35/model/flant5_small_distill_xsum_batchsize_4_full_samples_with_attention_mask_epoch2_o", 
 
 # # "/scratches/dialfs/alta/hln35/distillation/model/flant5_small_lr_10-4_race_distill_epoch2",
 # # "/scratches/dialfs/alta/hln35/model/flant5_small_finetune_xsum_batchsize_4_full_samples_with_attention_mask_epoch2",
-# ]
+]
 batch_size = 16
 
 #Evaluate summary
@@ -468,12 +469,13 @@ test_translate_set = tokenized_translate
 # test_translate_set = tokenized_translate.set_format("torch")
 test_translate_dataloader = DataLoader(test_translate_set, batch_size=batch_size)
 
-# for model in model_list:
-#      model_small_trained = model
-#      model_small_trained = AutoModelForSeq2SeqLM.from_pretrained(model_small_trained, local_files_only=True).to(device)  
+for model in model_list:
+    model_small_trained = model
+    model_small_trained = AutoModelForSeq2SeqLM.from_pretrained(model_small_trained, local_files_only=True).to(device)  
 #      test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="dialogue", ref_field="summary", dataset_name="samsum", evaluator=unieval_evaluator)
      #test_scores_mt = evaluate_mt(model=model_small_trained, tokenizer=tokenizer, data_loader=test_translate_dataloader, batch_size=batch_size, source_lang=source_lang, target_lang=target_lang, model_evaluator=comet_evaluator) 
-    # test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="document", ref_field="summary")
+    test_scores_sum = evaluate_summary(model=model_small_trained, tokenizer=tokenizer, data_loader=test_summary_dataloader, batch_size=batch_size, src_field="document", ref_field="summary", dataset_name="xsum", evaluator=unieval_evaluator)
+    
     
 #Evaluate classification
 task_list = [(("race", "all"), "test", preprocess_function_race, ans_id_dict), (("facebook/anli",""), "test_r1", preprocess_anli, ans_id_dict_3_options), (("sst2",""), "validation", preprocess_sst2, ans_id_dict_2_options), (("google/boolq",""), "validation", preprocess_boolq, ans_id_dict_2_options), (("SetFit/mnli",""), "validation", preprocess_mnli, ans_id_dict_3_options), (("facebook/anli",""), "test_r2", preprocess_anli, ans_id_dict_3_options), (("facebook/anli",""), "test_r3", preprocess_anli, ans_id_dict_3_options)]
